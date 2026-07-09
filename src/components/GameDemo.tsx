@@ -32,6 +32,7 @@ const MY_HAND: CardType[] = [
 ];
 
 const DISCARD_TOP = c("yellow", "reverse", "d0");
+const ACTIVE_COLOR: Color = "yellow"; // current play color, drives the discard glow
 
 // Cosmetic cards fanned under the live discard, so the pile reads with depth.
 const GHOSTS: { card: CardType; rot: number; x: number; y: number }[] = [
@@ -39,6 +40,28 @@ const GHOSTS: { card: CardType; rot: number; x: number; y: number }[] = [
   { card: c("blue", "reverse", "g2"), rot: 13, x: 14, y: 2 },
   { card: c("red", "reverse", "g3"), rot: -5, x: -3, y: -3 },
 ];
+
+// Table roster. `seat` keys the avatar art; `active` marks whose turn it is.
+const ACTIVE_SEAT = 2; // it's your turn
+const DIRECTION: 1 | -1 = 1; // 1 = clockwise
+type SeatDef = {
+  name: string;
+  seat: number;
+  count: number;
+  orientation: "top" | "left" | "right";
+};
+const OPPONENTS: SeatDef[] = [
+  { name: "Maya", seat: 1, count: 7, orientation: "top" },
+  { name: "Leo", seat: 0, count: 7, orientation: "left" },
+  { name: "Sam", seat: 3, count: 6, orientation: "right" },
+];
+
+const swatch: Record<Color, string> = {
+  red: "#ea6833",
+  yellow: "#f8c368",
+  green: "#97b16c",
+  blue: "#3595c6",
+};
 
 export function GameDemo() {
   return (
@@ -59,39 +82,38 @@ export function GameDemo() {
         Demo
       </span>
 
-      {/* --------------------------------------------------- Top-bar chrome */}
-      <IconButton className="absolute top-6 left-6" label="Menu">
-        <span className="flex flex-col gap-[5px]">
-          <span className="block w-6 h-[3px] rounded-full bg-uno-ink" />
-          <span className="block w-6 h-[3px] rounded-full bg-uno-ink" />
-          <span className="block w-6 h-[3px] rounded-full bg-uno-ink" />
-        </span>
-      </IconButton>
-
-      <IconButton className="absolute top-6 right-6 rounded-full" round label="Theme">
-        <SunIcon />
-      </IconButton>
-
       {/* ---------------------------------------------------- Opponent seats */}
       <div className="absolute top-5 left-1/2 -translate-x-1/2">
-        <Seat orientation="top" avatarSeat={1} count={7} />
+        <Seat def={OPPONENTS[0]} active={OPPONENTS[0].seat === ACTIVE_SEAT} />
       </div>
 
-      <div className="absolute left-8 top-[46%] -translate-y-1/2">
-        <Seat orientation="left" avatarSeat={0} count={7} />
+      <div className="absolute left-7 top-[45%] -translate-y-1/2">
+        <Seat def={OPPONENTS[1]} active={OPPONENTS[1].seat === ACTIVE_SEAT} />
       </div>
 
-      <div className="absolute right-8 top-[46%] -translate-y-1/2">
-        <Seat orientation="right" avatarSeat={3} count={6} />
+      <div className="absolute right-7 top-[45%] -translate-y-1/2">
+        <Seat def={OPPONENTS[2]} active={OPPONENTS[2].seat === ACTIVE_SEAT} />
       </div>
 
       {/* ----------------------------------------------------- Center piles */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         <div className="relative grid place-items-center">
-          <DirectionArrows />
+          {/* Focal halo — a soft cream bloom in the active color under the
+              discard, breathing to pull the eye to the current card. */}
+          <span
+            aria-hidden
+            className="focal-halo absolute left-1/2 top-1/2 -z-10 rounded-full blur-2xl pointer-events-none"
+            style={{
+              width: 300,
+              height: 300,
+              background: `radial-gradient(circle, ${swatch[ACTIVE_COLOR]}55 0%, ${swatch[ACTIVE_COLOR]}22 40%, transparent 70%)`,
+            }}
+          />
+
+          <DirectionArrows direction={DIRECTION} />
 
           {/* Draw pile, tucked to the left of the discard. */}
-          <div className="absolute right-full top-1/2 -translate-y-1/2 mr-10">
+          <div className="absolute right-full top-1/2 -translate-y-1/2 mr-12">
             <DrawPile />
           </div>
 
@@ -99,16 +121,18 @@ export function GameDemo() {
         </div>
       </div>
 
-      {/* ---------------------------------------------------- Bottom hand tray */}
-      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[900px]">
-        <div className="relative bg-uno-cream/45 backdrop-blur-2xl rounded-t-[34px] border-t border-x border-white/45 shadow-[0_-10px_44px_rgba(43,42,39,0.18),inset_0_1px_0_rgba(255,255,255,0.55)] pl-4 pr-5 pt-3 pb-7">
+      {/* ---------------------------------------------------- Bottom hand tray
+          Shorter glass slab; the hand rises out of the top of it so the cards
+          — not the container — own the space. */}
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[860px]">
+        <div className="relative bg-uno-cream/45 backdrop-blur-2xl rounded-t-[30px] border-t border-x border-white/45 shadow-[0_-10px_44px_rgba(43,42,39,0.18),inset_0_1px_0_rgba(255,255,255,0.55)] pl-4 pr-5 pt-2 pb-4">
           <div className="flex items-end">
-            {/* You */}
-            <div className="flex flex-col items-center gap-1 pb-5 shrink-0 z-10">
-              <span className="px-2.5 py-0.5 rounded-[10px] bg-uno-ink text-uno-cream text-[11px] font-extrabold leading-none">
+            {/* You — the active player: avatar + name grouped as one unit. */}
+            <div className="flex flex-col items-center gap-1 pb-3 shrink-0 z-10">
+              <Avatar seat={2} size={52} glow />
+              <span className="px-2.5 py-0.5 rounded-[10px] bg-uno-ink text-uno-cream text-[11px] font-extrabold leading-none shadow-[0_2px_5px_rgba(43,42,39,0.3)]">
                 You
               </span>
-              <Avatar seat={2} size={50} glow />
             </div>
 
             {/* Hand */}
@@ -119,64 +143,73 @@ export function GameDemo() {
         </div>
       </div>
 
-      {/* UNO! call button, floating bottom-right over the tray. */}
-      <UnoButton className="absolute bottom-8 right-10" />
-
-      {/* Signature maker's mark, bottom-left. */}
-      <div className="absolute bottom-6 left-6 w-11 h-11 grid place-items-center rounded-full bg-uno-ink text-uno-cream shadow-[0_3px_8px_rgba(43,42,39,0.35)]">
-        <WaveMark />
-      </div>
+      {/* UNO! call button, bottom-right. Static until the player is down to a
+          single card and actually needs to call it. */}
+      <UnoButton className="absolute bottom-8 right-10" callable={MY_HAND.length <= 1} />
     </main>
   );
 }
 
 /* ============================================================ Opponent seat */
 
-function Seat({
-  orientation,
-  avatarSeat,
-  count,
-}: {
-  orientation: "top" | "left" | "right";
-  avatarSeat: number;
-  count: number;
-}) {
+function Seat({ def, active }: { def: SeatDef; active: boolean }) {
+  const { name, seat, count, orientation } = def;
   const vertical = orientation !== "top";
   const backs = Math.min(count + 1, 8); // one more back than the badge, as in the mock
 
+  // Avatar + name grouped so they always read as one label.
+  const identity = (
+    <div className="flex flex-col items-center gap-1">
+      <Avatar seat={seat} size={54} glow={active} />
+      <NamePill name={name} active={active} />
+    </div>
+  );
+
+  // A translucent backing unifies the seat and, when active, warms up to show
+  // whose turn it is — depth/turn signalled without a new hue.
+  const backing = active
+    ? "bg-uno-cream/35 ring-2 ring-uno-ink/10 shadow-[0_6px_18px_rgba(43,42,39,0.16)]"
+    : "bg-uno-cream/0";
+
   // Left/right seats: cards lie on their side (rotated 90°) and stack down the
-  // screen edge like a drawn blind. Each portrait card's layout box is swapped
-  // for its landscape footprint, then the card itself is rotated within it.
+  // screen edge, gently fanned + staggered so they read as a held hand seen
+  // edge-on rather than a flat blind.
   if (vertical) {
     const W = 44; // portrait width, pre-rotation
     const boxW = W * 1.5; // landscape footprint (the rotated card's visible width)
-    const step = W * 0.52; // slice of each stacked card left visible
+    const step = W * 0.5; // slice of each stacked card left visible
+    const mid = (backs - 1) / 2;
+    // Each side faces its own player: the left seat's tops point left (reads
+    // upright from Leo); the right seat mirrors it so the tops point right
+    // toward Sam.
+    const base = orientation === "left" ? 90 : -90;
+    const sign = orientation === "left" ? 1 : -1;
     return (
-      <div className="flex flex-col items-center gap-2">
-        <Avatar seat={avatarSeat} size={56} />
+      <div className={`flex flex-col items-center gap-2 rounded-[22px] p-2.5 transition-colors ${backing}`}>
+        {identity}
         <div className="relative">
           <div className="flex flex-col items-center">
-            {Array.from({ length: backs }).map((_, i) => (
-              <div
-                key={i}
-                className="relative card-shadow-sm"
-                style={{
-                  width: boxW,
-                  height: W,
-                  marginTop: i > 0 ? -(W - step) : 0,
-                  zIndex: i,
-                }}
-              >
+            {Array.from({ length: backs }).map((_, i) => {
+              const d = i - mid;
+              const rot = base + d * 3.4 * sign; // fan open, mirrored per side
+              const x = -Math.abs(d) * 1.6 * sign; // curve the fan away from the edge
+              return (
                 <div
-                  className="absolute left-1/2 top-1/2"
-                  style={{ transform: "translate(-50%,-50%) rotate(90deg)" }}
+                  key={i}
+                  className="relative card-shadow-sm"
+                  style={{ width: boxW, height: step, marginTop: i > 0 ? 0 : (W - step) / 2, zIndex: i }}
                 >
-                  <CardBack width={W} />
+                  <div
+                    className="absolute left-1/2 top-1/2"
+                    style={{ transform: `translate(calc(-50% + ${x}px), -50%) rotate(${rot}deg)` }}
+                  >
+                    <CardBack width={W} />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-          <div className="absolute -bottom-2 -right-2 z-20">
+          <div className="absolute -bottom-3 -right-3 z-20">
             <CountBadge n={count} />
           </div>
         </div>
@@ -184,23 +217,26 @@ function Seat({
     );
   }
 
-  // Top seat: portrait cards fanned horizontally.
+  // Top seat: portrait cards fanned horizontally with a gentle upward arc.
   const W = 48;
+  const mid = (backs - 1) / 2;
   return (
-    <div className="flex items-center gap-3">
-      <Avatar seat={avatarSeat} size={56} />
+    <div className={`flex items-center gap-3 rounded-[22px] p-2.5 transition-colors ${backing}`}>
+      {identity}
       <div className="relative">
-        <div className="flex flex-row">
+        <div className="flex flex-row items-end">
           {Array.from({ length: backs }).map((_, i) => {
-            const mid = (backs - 1) / 2;
-            const rot = backs > 1 ? (i - mid) * 2.2 : 0;
+            const d = i - mid;
+            const rot = d * 2.6;
+            const y = Math.abs(d) * Math.abs(d) * 0.7; // ends dip, center rides up
             return (
               <div
                 key={i}
                 className="card-shadow-sm"
                 style={{
-                  marginLeft: i > 0 ? -W * 0.6 : 0,
-                  transform: `rotate(${rot}deg)`,
+                  marginLeft: i > 0 ? -W * 0.58 : 0,
+                  transform: `translateY(${y}px) rotate(${rot}deg)`,
+                  transformOrigin: "bottom center",
                   zIndex: i,
                 }}
               >
@@ -209,11 +245,24 @@ function Seat({
             );
           })}
         </div>
-        <div className="absolute bottom-1 right-0 z-20">
+        <div className="absolute -bottom-2 right-0 z-20">
           <CountBadge n={count} />
         </div>
       </div>
     </div>
+  );
+}
+
+/** Avatar + name label used across every seat for consistent identity. */
+function NamePill({ name, active }: { name: string; active: boolean }) {
+  return (
+    <span
+      className={`max-w-[7rem] truncate px-2.5 py-0.5 rounded-[10px] text-[11px] font-extrabold leading-none shadow-[0_2px_5px_rgba(43,42,39,0.28)] ${
+        active ? "bg-uno-ink text-uno-cream" : "bg-uno-cream text-uno-ink border-2 border-uno-ink/10"
+      }`}
+    >
+      {name}
+    </span>
   );
 }
 
@@ -251,10 +300,27 @@ function CountBadge({ n }: { n: number }) {
 /* ================================================================ Draw pile */
 
 function DrawPile() {
-  const W = 116;
+  const W = 108; // a touch smaller than the discard, so the discard reads as focal
   const layers = 4;
   return (
-    <div style={{ width: W, height: Math.round((W * 3) / 2) + 10 }} className="relative shrink-0">
+    <button
+      type="button"
+      style={{ width: W, height: Math.round((W * 3) / 2) + 10 }}
+      className="group relative shrink-0 cursor-pointer transition-transform duration-200 hover:-translate-y-1"
+      title="Draw a card"
+    >
+      {/* Soft contact shadow grounding the deck on the table. */}
+      <span
+        aria-hidden
+        className="absolute left-1/2 -translate-x-1/2 rounded-[50%] blur-md pointer-events-none"
+        style={{
+          width: W * 0.82,
+          height: 20,
+          bottom: -10,
+          zIndex: 0,
+          background: "rgba(43,42,39,0.30)",
+        }}
+      />
       {Array.from({ length: layers }).map((_, i) => {
         const isTop = i === layers - 1;
         return (
@@ -267,17 +333,35 @@ function DrawPile() {
           </div>
         );
       })}
-    </div>
+      {/* Draw-count hint, sitting on the deck's corner. */}
+      <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 z-20 px-2 py-0.5 rounded-full bg-uno-ink/85 text-uno-cream text-[10px] font-bold tracking-wide opacity-0 group-hover:opacity-100 transition-opacity">
+        DRAW
+      </span>
+    </button>
   );
 }
 
 /* ============================================================= Discard pile */
 
 function DiscardPile() {
-  const W = 132;
+  const W = 150; // ~14% larger than before — the board's primary focal point
   const h = Math.round((W * 3) / 2);
   return (
-    <div className="relative shrink-0" style={{ width: W + 34, height: h + 24 }}>
+    <div className="relative shrink-0" style={{ width: W + 40, height: h + 30 }}>
+      {/* Active-color ring bloom hugging the top card. */}
+      <span
+        aria-hidden
+        className="absolute left-1/2 top-1/2 rounded-[20px] pointer-events-none"
+        style={{
+          width: W + 10,
+          height: h + 10,
+          marginLeft: -(W + 10) / 2,
+          marginTop: -(h + 10) / 2,
+          transform: "rotate(-6deg)",
+          boxShadow: `0 0 0 4px ${swatch[ACTIVE_COLOR]}66`,
+        }}
+      />
+
       {GHOSTS.map((g) => (
         <div
           key={g.card.uid}
@@ -293,7 +377,7 @@ function DiscardPile() {
       ))}
 
       <div
-        className="absolute left-1/2 top-1/2 card-shadow"
+        className="absolute left-1/2 top-1/2 card-shadow-lg"
         style={{ marginLeft: -W / 2, marginTop: -h / 2, transform: "rotate(-6deg)" }}
       >
         <CardFace card={DISCARD_TOP} width={W} />
@@ -304,12 +388,16 @@ function DiscardPile() {
 
 /* =========================================================== Direction arcs */
 
-function DirectionArrows() {
+function DirectionArrows({ direction }: { direction: 1 | -1 }) {
   return (
     <div
       aria-hidden
       className="absolute left-1/2 top-1/2 pointer-events-none text-uno-ink1/45 arrow-drift"
-      style={{ width: 340, height: 340, transform: "translate(-50%,-50%)" }}
+      style={{
+        width: 360,
+        height: 360,
+        transform: `translate(-50%,-50%) scaleX(${direction === -1 ? -1 : 1})`,
+      }}
     >
       <svg viewBox="0 0 320 320" className="w-full h-full" fill="none">
         <path
@@ -335,48 +423,63 @@ function DirectionArrows() {
 
 /* ===================================================================== Hand */
 
+// Tiny deterministic per-card jitter so a held hand never looks mechanically
+// even. Keyed by index → stable across renders.
+const JITTER = [0.9, -1.4, 0.5, -0.7, 1.2, -0.4, 0.8, -1.1];
+
 function Hand({ cards }: { cards: CardType[] }) {
   const [hover, setHover] = useState<number | null>(null);
-  const W = 94;
+  const W = 102; // larger cards now that the tray is shorter
   const n = cards.length;
   const mid = (n - 1) / 2;
-  const overlap = -W * 0.3;
+  const overlap = -W * 0.34;
 
   return (
-    <div className="flex justify-center items-end h-[152px]" onMouseLeave={() => setHover(null)}>
+    <div
+      className="flex justify-center items-end h-[128px]"
+      onMouseLeave={() => setHover(null)}
+    >
       {cards.map((card, i) => {
         const d = i - mid;
-        const baseRot = d * 2.4;
-        const baseY = Math.abs(d) * Math.abs(d) * 0.8;
+        const jit = JITTER[i % JITTER.length];
+        const baseRot = d * 3.4 + jit; // wider fan + organic wobble
+        const baseY = Math.abs(d) * Math.abs(d) * 1.15 + Math.abs(jit); // arced bottoms
 
         let rot = baseRot;
         let y = baseY;
         let scale = 1;
         let z = i;
         let x = 0;
+        let lifted = false;
 
         if (hover === i) {
-          rot = 0;
-          y = -30;
-          scale = 1.14;
+          rot = jit * 0.3; // settle almost upright
+          y = -34;
+          scale = 1.16;
           z = 100;
+          lifted = true;
         } else if (hover !== null) {
-          x = Math.sign(i - hover) * 14;
-          y = baseY + 6;
-          z = 50 - Math.abs(i - hover);
+          // Spread neighbors away from the raised card, nearer ones move more.
+          const dist = i - hover;
+          const push = Math.sign(dist) * Math.max(6, 22 - Math.abs(dist) * 5);
+          x = push;
+          rot = baseRot + Math.sign(dist) * 2;
+          y = baseY + 4;
+          z = 50 - Math.abs(dist);
         }
 
         return (
           <div
             key={card.uid}
             onMouseEnter={() => setHover(i)}
-            className="relative card-shadow"
+            className={`relative ${lifted ? "card-shadow-hover" : "card-shadow"}`}
             style={{
               marginLeft: i === 0 ? 0 : overlap,
               transform: `translate(${x}px, ${y}px) rotate(${rot}deg) scale(${scale})`,
               transformOrigin: "bottom center",
               zIndex: z,
-              transition: "transform 200ms cubic-bezier(0.22,1,0.36,1), margin 200ms ease",
+              transition:
+                "transform 220ms cubic-bezier(0.22,1,0.36,1), margin 220ms ease",
             }}
           >
             <CardFace card={card} width={W} playable onClick={() => {}} />
@@ -389,108 +492,46 @@ function Hand({ cards }: { cards: CardType[] }) {
 
 /* ============================================================== UNO! button */
 
-function UnoButton({ className = "" }: { className?: string }) {
+function UnoButton({ className = "", callable = false }: { className?: string; callable?: boolean }) {
   return (
     <div className={`pointer-events-none ${className}`}>
       <button
         type="button"
-        className="pointer-events-auto group relative grid place-items-center px-8 py-3 rounded-[22px] bg-uno-red border-[3px] border-uno-cream shadow-[0_5px_0_rgba(43,42,39,0.28)] transition hover:-translate-y-0.5 active:translate-y-[3px] active:shadow-none uno-wiggle"
+        className={`pointer-events-auto group relative grid place-items-center px-8 py-3 rounded-[22px] bg-uno-red border-[3px] border-uno-cream shadow-[0_5px_0_rgba(43,42,39,0.28)] transition hover:-translate-y-0.5 active:translate-y-[3px] active:shadow-none ${
+          callable ? "uno-wiggle" : ""
+        }`}
       >
         <span className="font-display text-uno-cream text-[34px] leading-none tracking-wide drop-shadow-[0_2px_2px_rgba(43,42,39,0.35)]">
           UNO!
         </span>
-        {/* comic emphasis burst, top-right corner */}
-        <svg
-          aria-hidden
-          className="absolute -top-5 -right-5 text-uno-yellow"
-          width="40"
-          height="40"
-          viewBox="0 0 40 40"
-          fill="none"
-        >
-          {[15, 45, 75].map((deg) => {
-            const a = (deg * Math.PI) / 180;
-            return (
-              <line
-                key={deg}
-                x1={20 + Math.cos(a) * 9}
-                y1={20 - Math.sin(a) * 9}
-                x2={20 + Math.cos(a) * 17}
-                y2={20 - Math.sin(a) * 17}
-                stroke="currentColor"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-              />
-            );
-          })}
-        </svg>
+        {/* comic emphasis burst — only when a call is actually available */}
+        {callable && (
+          <svg
+            aria-hidden
+            className="absolute -top-5 -right-5 text-uno-yellow"
+            width="40"
+            height="40"
+            viewBox="0 0 40 40"
+            fill="none"
+          >
+            {[15, 45, 75].map((deg) => {
+              const a = (deg * Math.PI) / 180;
+              return (
+                <line
+                  key={deg}
+                  x1={20 + Math.cos(a) * 9}
+                  y1={20 - Math.sin(a) * 9}
+                  x2={20 + Math.cos(a) * 17}
+                  y2={20 - Math.sin(a) * 17}
+                  stroke="currentColor"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                />
+              );
+            })}
+          </svg>
+        )}
       </button>
     </div>
-  );
-}
-
-/* =================================================================== Chrome */
-
-function IconButton({
-  children,
-  className = "",
-  round,
-  label,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  round?: boolean;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      className={`grid place-items-center w-14 h-14 bg-uno-cream border-2 border-uno-ink/10 shadow-[0_3px_10px_rgba(43,42,39,0.18)] hover:-translate-y-0.5 active:translate-y-0 transition ${
-        round ? "rounded-full" : "rounded-[18px]"
-      } ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SunIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" className="text-uno-ink" fill="none">
-      <circle cx="12" cy="12" r="4.5" fill="currentColor" />
-      {Array.from({ length: 8 }).map((_, i) => {
-        const a = (i * Math.PI) / 4;
-        const x1 = 12 + Math.cos(a) * 7.5;
-        const y1 = 12 + Math.sin(a) * 7.5;
-        const x2 = 12 + Math.cos(a) * 10;
-        const y2 = 12 + Math.sin(a) * 10;
-        return (
-          <line
-            key={i}
-            x1={x1}
-            y1={y1}
-            x2={x2}
-            y2={y2}
-            stroke="currentColor"
-            strokeWidth="2.4"
-            strokeLinecap="round"
-          />
-        );
-      })}
-    </svg>
-  );
-}
-
-function WaveMark() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M4 15 Q8 6 12 12 T20 9"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }

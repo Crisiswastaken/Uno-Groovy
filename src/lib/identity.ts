@@ -27,7 +27,6 @@ export function setName(code: string, name: string) {
 }
 
 export interface CreatePayload {
-  displayName: string;
   config: RuleConfig;
 }
 

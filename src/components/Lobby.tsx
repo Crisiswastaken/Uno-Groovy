@@ -32,7 +32,7 @@ export function Lobby({
   return (
     <main className="min-h-screen flex flex-col items-center py-12 px-4">
       <div className="w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-1">Lobby</h1>
+        <h1 className="font-display text-5xl mb-1">Lobby</h1>
         <p className="text-uno-ink1 text-sm mb-6">
           Waiting for players — host starts when ready (2–4).
         </p>
@@ -46,7 +46,7 @@ export function Lobby({
           </div>
           <button
             onClick={copy}
-            className="text-sm font-semibold bg-uno-cream border-2 border-uno-ink/15 hover:bg-uno-white2 rounded-full px-4 py-1.5 transition"
+            className="text-sm font-semibold bg-uno-cream border-2 border-uno-ink/15 hover:bg-uno-white2 hover:border-uno-ink/25 hover:-translate-y-0.5 active:translate-y-0 rounded-full px-4 py-1.5 transition"
           >
             {copied ? "Copied link!" : "Copy invite link"}
           </button>
@@ -85,7 +85,7 @@ export function Lobby({
           <button
             onClick={() => send({ type: "startGame" })}
             disabled={!canStart}
-            className="w-full bg-uno-green text-uno-cream font-extrabold uppercase tracking-wide py-3.5 rounded-card border-2 border-uno-ink/15 shadow-[0_5px_0_rgba(43,42,39,0.25)] active:translate-y-[3px] active:shadow-none disabled:opacity-40 disabled:shadow-none transition"
+            className="w-full bg-uno-green text-uno-cream font-extrabold uppercase tracking-wide py-3.5 rounded-card border-2 border-uno-ink/15 shadow-[0_5px_0_rgba(43,42,39,0.25)] hover:-translate-y-0.5 hover:brightness-[1.04] hover:shadow-[0_7px_0_rgba(43,42,39,0.25)] active:translate-y-[3px] active:shadow-none disabled:opacity-40 disabled:translate-y-0 disabled:shadow-none disabled:hover:brightness-100 transition"
           >
             {canStart ? "Start Game" : "Need 2+ players"}
           </button>

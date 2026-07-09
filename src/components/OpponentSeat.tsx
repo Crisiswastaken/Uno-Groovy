@@ -53,9 +53,11 @@ function AvatarChip({
         {!player.connected && (
           <span
             title="disconnected"
-            className="absolute -bottom-1 -right-1 text-xs bg-uno-cream rounded-full px-1 leading-none"
+            className="absolute -bottom-1 -right-1 grid place-items-center w-4 h-4 bg-uno-cream rounded-full border border-uno-ink/15 text-uno-ink1 shadow-[0_1px_2px_rgba(43,42,39,0.25)]"
           >
-            💤
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+            </svg>
           </span>
         )}
       </div>

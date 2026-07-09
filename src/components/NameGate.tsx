@@ -24,12 +24,12 @@ export function NameGate({
           maxLength={20}
           autoFocus
           onKeyDown={(e) => e.key === "Enter" && name.trim() && onSubmit(name.trim())}
-          className="bg-uno-white1 border-2 border-uno-ink/15 rounded-card px-4 py-3 outline-none placeholder:text-uno-ink2 focus:border-uno-blue transition"
+          className="bg-uno-white1 border-2 border-uno-ink/15 rounded-card px-4 py-3 outline-none placeholder:text-uno-ink2 hover:border-uno-ink/25 focus:border-uno-blue transition"
         />
         <button
           onClick={() => name.trim() && onSubmit(name.trim())}
           disabled={!name.trim()}
-          className="bg-uno-green text-uno-cream font-extrabold uppercase tracking-wide py-3 rounded-card border-2 border-uno-ink/15 shadow-[0_5px_0_rgba(43,42,39,0.25)] active:translate-y-[3px] active:shadow-none disabled:opacity-40 disabled:shadow-none transition"
+          className="bg-uno-green text-uno-cream font-extrabold uppercase tracking-wide py-3 rounded-card border-2 border-uno-ink/15 shadow-[0_5px_0_rgba(43,42,39,0.25)] hover:-translate-y-0.5 hover:brightness-[1.04] hover:shadow-[0_7px_0_rgba(43,42,39,0.25)] active:translate-y-[3px] active:shadow-none disabled:opacity-40 disabled:translate-y-0 disabled:shadow-none disabled:hover:brightness-100 transition"
         >
           Join
         </button>

@@ -89,6 +89,62 @@ body {
   min-height: 100vh;
 }
 
+/* --------------------------------------------------------- Scrollbar ---
+   Thin, rounded scrollbar in the design-system neutrals. The transparent
+   border + padding-box clip give it a slim inset pill that reads correctly
+   on any surface. */
+* {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--color-uno-ink2) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-uno-ink2);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-uno-ink1);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ------------------------------------------------------------- Cursor ---
+   Themed groovy pointing-hand cursor across the app. The image is a small
+   (40x50) export of /public/cursor.png — browsers ignore cursor images larger
+   than 128px. Hotspot sits on the fingertip. Text fields keep a caret and
+   disabled controls stay not-allowed. */
+html,
+body {
+  cursor: url("/cursor-sm.png") 16 2, auto;
+}
+a,
+button,
+select,
+label,
+summary,
+[role="button"],
+.cursor-pointer {
+  cursor: url("/cursor-sm.png") 16 2, pointer;
+}
+input:where(:not([type="button"]):not([type="submit"]):not([type="reset"])),
+textarea,
+[contenteditable="true"] {
+  cursor: text;
+}
+:disabled {
+  cursor: not-allowed;
+}
+
 /* Playing-card look. The card art is 660x1029 (ratio ~1.559, taller than a
    flat 2:3), so we DON'T force an aspect-ratio or clip: the <Card> image drives
    its own height (height:auto) and its own proportional corner radius. Forcing
@@ -176,11 +232,43 @@ body {
   animation: arrow-drift 2.4s ease-in-out infinite;
 }
 
-/* Soft, layered card shadow used across piles and hands. */
+/* ------------------------------------------------------- Elevation scale ---
+   One consistent depth ladder, expressed only through shadow (no extra hue):
+   background < table < piles < player seats < the focal discard < HUD.
+   Cards use drop-shadow (follows the rounded art); panels use box-shadow.   */
+.card-shadow-sm {
+  /* opponent backs, ghost cards — barely lifted off the table */
+  filter: drop-shadow(0 3px 5px rgba(43, 42, 39, 0.2));
+}
 .card-shadow {
+  /* draw pile, hand cards, seat stickers — clearly on a layer above */
   filter: drop-shadow(0 6px 10px rgba(43, 42, 39, 0.22))
     drop-shadow(0 2px 3px rgba(43, 42, 39, 0.12));
 }
-.card-shadow-sm {
-  filter: drop-shadow(0 3px 5px rgba(43, 42, 39, 0.2));
+.card-shadow-lg {
+  /* the focal discard — the highest card element on the board */
+  filter: drop-shadow(0 18px 26px rgba(43, 42, 39, 0.32))
+    drop-shadow(0 6px 10px rgba(43, 42, 39, 0.18));
+}
+.card-shadow-hover {
+  /* a card picked up in the hand — reads as lifted toward the viewer */
+  filter: drop-shadow(0 22px 30px rgba(43, 42, 39, 0.34))
+    drop-shadow(0 8px 12px rgba(43, 42, 39, 0.2));
+}
+
+/* Soft focal halo breathing under the active discard, in the table cream —
+   draws the eye to the current card without adding a new color. */
+@keyframes focal-breathe {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.08);
+    opacity: 0.72;
+  }
+}
+.focal-halo {
+  animation: focal-breathe 3.4s ease-in-out infinite;
 }

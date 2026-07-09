@@ -37,8 +37,8 @@ export function RoundEnd({
                 key={p.playerId}
                 className="flex justify-between items-center bg-uno-cream border-2 border-uno-ink/10 rounded-card px-4 py-2.5"
               >
-                <span className="font-semibold">
-                  {i === 0 && "🏆 "}
+                <span className="font-semibold flex items-center gap-1.5">
+                  {i === 0 && <Trophy />}
                   {p.displayName}
                 </span>
                 <span className="font-bold tabular-nums">
@@ -56,7 +56,7 @@ export function RoundEnd({
         {isHost ? (
           <button
             onClick={() => send({ type: "startNextRound" })}
-            className="w-full bg-uno-green text-uno-cream font-extrabold uppercase tracking-wide py-3.5 rounded-card border-2 border-uno-ink/15 shadow-[0_5px_0_rgba(43,42,39,0.25)] active:translate-y-[3px] active:shadow-none transition"
+            className="w-full bg-uno-green text-uno-cream font-extrabold uppercase tracking-wide py-3.5 rounded-card border-2 border-uno-ink/15 shadow-[0_5px_0_rgba(43,42,39,0.25)] hover:-translate-y-0.5 hover:brightness-[1.04] hover:shadow-[0_7px_0_rgba(43,42,39,0.25)] active:translate-y-[3px] active:shadow-none transition"
           >
             {isMatchEnd ? "New Match" : "Next Round"}
           </button>
@@ -67,5 +67,21 @@ export function RoundEnd({
         )}
       </div>
     </main>
+  );
+}
+
+/** Winner's mark on the leaderboard — replaces the old 🏆 emoji. */
+function Trophy() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+      className="shrink-0 text-uno-yellow drop-shadow-[0_1px_1px_rgba(43,42,39,0.25)]"
+    >
+      <path d="M19 4h-2V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1H5a1 1 0 0 0-1 1v2a4 4 0 0 0 4 4h.28A5 5 0 0 0 11 13.9V17H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-3.1A5 5 0 0 0 15.72 11H16a4 4 0 0 0 4-4V5a1 1 0 0 0-1-1ZM6 7V6h1v3a2 2 0 0 1-1-2Zm13 0a2 2 0 0 1-1 2V6h1v1Z" />
+    </svg>
   );
 }

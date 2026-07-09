@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PartySocket from "partysocket";
 import { useGameStore } from "../store/gameStore";
+import type { RuleConfig } from "../engine/types";
 import type { ClientMessage, ServerMessage } from "../shared/protocol";
 import { getName, getOrCreatePlayerId, takeCreate } from "./../lib/identity";
 
@@ -24,6 +25,9 @@ export function useRoom(code: string) {
   const [needsName, setNeedsName] = useState(false);
   const intentRef = useRef<Intent>({ kind: "waiting" });
   const playerIdRef = useRef<string>("");
+  // Set when this client created the room: carries the rules until the host
+  // picks a name (which they now do on the room screen, like everyone else).
+  const hostConfigRef = useRef<RuleConfig | undefined>(undefined);
 
   const send = useCallback((msg: ClientMessage) => {
     socketRef.current?.send(JSON.stringify(msg));
@@ -35,8 +39,15 @@ export function useRoom(code: string) {
     playerIdRef.current = getOrCreatePlayerId(code);
     const create = takeCreate(code);
     if (create) {
-      intentRef.current = { kind: "host", displayName: create.displayName };
-      (intentRef as any).config = create.config;
+      // We created the room. Hold the rules; the host still names themselves.
+      hostConfigRef.current = create.config;
+      const stored = getName(code);
+      if (stored) {
+        intentRef.current = { kind: "host", displayName: stored };
+        (intentRef as any).config = create.config;
+      } else {
+        setNeedsName(true);
+      }
     } else {
       const stored = getName(code);
       if (stored) {
@@ -128,13 +139,17 @@ export function useRoom(code: string) {
   // Called by the name-gate form for players joining via a shared link.
   const submitName = useCallback(
     (displayName: string) => {
-      intentRef.current = { kind: "player", displayName };
       setNeedsName(false);
-      send({
-        type: "joinRoom",
-        playerId: playerIdRef.current,
-        displayName,
-      });
+      const config = hostConfigRef.current;
+      if (config) {
+        // Host naming themselves: join and establish the room's rules.
+        intentRef.current = { kind: "host", displayName };
+        (intentRef as any).config = config;
+        send({ type: "joinRoom", playerId: playerIdRef.current, displayName, config });
+      } else {
+        intentRef.current = { kind: "player", displayName };
+        send({ type: "joinRoom", playerId: playerIdRef.current, displayName });
+      }
     },
     [send],
   );

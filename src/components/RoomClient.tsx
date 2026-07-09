@@ -2,6 +2,7 @@
 
 import { useRoom } from "../hooks/useRoom";
 import { Card } from "./ui/Card";
+import { Spinner } from "./ui/Spinner";
 import { setName } from "../lib/identity";
 import { useGameStore } from "../store/gameStore";
 import { GameTable } from "./GameTable";
@@ -50,12 +51,13 @@ export function RoomClient({ code }: { code: string }) {
   if (!view) {
     return (
       <main className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-uno-ink1 font-medium">
-            {connected ? "Entering room…" : "Connecting…"}
-          </div>
-          <div className="text-xs text-uno-ink2 mt-2 tracking-widest">
-            {code}
+        <div className="flex flex-col items-center gap-4">
+          <Spinner />
+          <div className="text-center">
+            <div className="text-uno-ink1 font-medium">
+              {connected ? "Entering room…" : "Connecting…"}
+            </div>
+            <div className="text-xs text-uno-ink2 mt-1 tracking-widest">{code}</div>
           </div>
         </div>
       </main>
