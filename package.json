@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -n next,party -c cyan,magenta \"next dev --webpack\" \"partykit dev\"",
+    "dev:lan": "concurrently -n next,party -c cyan,magenta \"next dev --webpack -H 0.0.0.0\" \"partykit dev\"",
     "dev:next": "next dev --webpack",
     "dev:next:turbo": "next dev --turbopack",
     "dev:party": "partykit dev",

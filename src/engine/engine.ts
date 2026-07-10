@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { buildDeck, cardPoints, shuffle } from "./deck";
-import { canPlay, isDrawCard, isPlayableNormally, isWild } from "./rules";
+import { canPlay, isPlayableNormally, isWild } from "./rules";
 import {
   ActionLogEntry,
   Card,

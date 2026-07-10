@@ -378,3 +378,57 @@ textarea,
     animation: none;
   }
 }
+
+/* ------------------------------------------------------- Mobile gate ---
+   The game is desktop-first and not responsive yet, so on phones / small
+   touch screens we replace it with a "desktop only" notice. Hidden by
+   default; shown only for coarse-pointer (no-hover) devices or very narrow
+   viewports. Sits above everything (splash included) via a max z-index.
+   See src/components/MobileGate.tsx. */
+.mobile-gate {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background-color: var(--color-uno-cream);
+  color: var(--color-uno-ink);
+  text-align: center;
+  cursor: auto;
+}
+@media (hover: none) and (pointer: coarse) {
+  .mobile-gate {
+    display: flex;
+  }
+}
+@media (max-width: 640px) {
+  .mobile-gate {
+    display: flex;
+  }
+}
+
+.mobile-gate__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  max-width: 22rem;
+}
+.mobile-gate__logo {
+  width: 11rem;
+  height: auto;
+  filter: drop-shadow(0 8px 16px rgba(43, 42, 39, 0.25));
+  user-select: none;
+}
+.mobile-gate__title {
+  font-family: var(--font-display);
+  font-size: 2.25rem;
+  line-height: 1.1;
+}
+.mobile-gate__text {
+  color: var(--color-uno-ink1);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}

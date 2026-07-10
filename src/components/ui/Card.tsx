@@ -5,9 +5,10 @@ import NextImage, { type ImageProps } from "next/image";
 /**
  * The one reusable image surface for the whole app.
  *
- * Wraps Next.js' built-in <Image> (from next/image) so every image gets
- * automatic size compression, lazy loading, and layout-shift prevention —
- * and applies the UNO card artwork's own corner radius (8px, matching
+ * Wraps Next.js' built-in <Image> (from next/image) for lazy loading and
+ * layout-shift prevention (image optimization itself is off project-wide — see
+ * next.config.mjs and src/lib/preload.ts), and applies the UNO card artwork's
+ * own corner radius (8px, matching
  * `.card-face`) so every image reads as the same shape as a physical UNO
  * card. (Note: `--radius-card`/`rounded-card` is 22px — that's the larger
  * UI-surface token for buttons/panels, not the card artwork's corner.)

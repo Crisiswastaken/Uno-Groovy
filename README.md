@@ -1,93 +1,89 @@
 # Custom UNO
 
-Web-based multiplayer UNO with **host-configurable house rules**, built per `UNO_PRD.md`.
+Web-based multiplayer **UNO** with host-configurable house rules — built with a
+server-authoritative game engine so hands stay secret and dropped players can
+rejoin their exact seat. Play 2–4 players per room over a shareable code.
 
-- **Server-authoritative** game logic (the deck and hands never leave the server) → no cheating, and a dropped player can rejoin their exact state.
-- 2–4 players per room, shareable 6-char room code / invite link.
-- Configurable rules: UNO-call penalty, +2/+4 stacking, draw-until-playable, force-play, deal size, single-round vs target-score scoring.
+> **Desktop only for now** — the table isn't responsive yet, so phones/small
+> screens see a "Desktop only" notice. See [v1 scope](#notes--v1-scope).
 
-## Stack
+## Features
+
+- 🎴 **2–4 player rooms** with a shareable 6-char code / invite link.
+- 🔒 **Server-authoritative** — the deck and every hand live on the server; the
+  client only ever sees its own cards. No cheating, and reconnects restore state.
+- ⚙️ **Configurable house rules** — UNO-call penalty, +2/+4 stacking, same-rank
+  stacking, draw-until-playable, force-play, deal size, and single-round vs
+  target-score scoring.
+- 🔁 **Resilient** — rejoin-first connection, a 30s disconnect grace with
+  auto-pass, and live reconnect banners.
+- ✨ A hand-drawn "groovy" art style, a first-visit loading intro, and playful
+  table motion.
+
+## Tech stack
 
 | Layer | Choice |
 |---|---|
-| UI + lobby | Next.js (App Router) + TypeScript + Tailwind |
+| UI + lobby | Next.js 16 (App Router) + React 19 + TypeScript |
+| Styling | Tailwind CSS v4 (CSS-first) |
 | Realtime game server | PartyKit (one stateful "party" per room) |
 | Client view state | Zustand |
 | Validation | Zod (every inbound action) |
-| Card art | PNGs in `public/cards/` (from `UNO-CARDS/`) |
+| Tests | Vitest (pure engine) |
 
-## Project layout
-
-```
-party/server.ts          PartyKit room server: identity, validation, broadcast, 30s auto-pass
-src/engine/              Pure, unit-tested game engine (no networking)
-  types.ts  deck.ts  rules.ts  engine.ts
-src/shared/protocol.ts   Zod message schemas + client/server message types
-src/store/gameStore.ts   Zustand store (personalized view + toasts)
-src/hooks/useRoom.ts     PartySocket connection: rejoin-first-then-join
-src/lib/identity.ts      Per-room playerId / name / host-create handoff (localStorage)
-src/app/                 Landing, /create (config form), /room/[code]
-src/components/          Lobby, GameTable, Hand/Card, ColorPicker, RoundEnd, Toasts, ...
-public/cards/            {color}_{value}.png, wild.png, wild_draw4.png
-```
-
-## Run locally
-
-Runs two processes: Next.js (`:3000`) and the PartyKit game server (`:1999`).
+## Quick start
 
 ```bash
 npm install
-npm run dev        # starts BOTH next + partykit (via concurrently)
+npm run dev        # starts the web app (:3000) + game server (:1999)
 ```
 
-Then open http://localhost:3000. Create a room, copy the invite link, and open it
-in another browser/incognito window to join as a second player.
+Open **http://localhost:3000**, create a room, and open the invite link in a
+second window to join. Full instructions — including **playing with friends over
+LAN or the internet** — are in **[SETUP.md](SETUP.md)**.
 
-Run them separately if you prefer:
+## Documentation
 
-```bash
-npm run dev:next   # http://localhost:3000 (webpack)
-npm run dev:party  # http://127.0.0.1:1999
+| Doc | What's in it |
+|---|---|
+| **[SETUP.md](SETUP.md)** | Install, run locally, and host a game for friends (LAN / ngrok / cloudflared). |
+| **[DEPLOYMENT.md](DEPLOYMENT.md)** | Deploy to production (PartyKit + Vercel), env-var reference, verification checklist. |
+| **[CONTRIBUTING.md](CONTRIBUTING.md)** | Architecture, project layout, and PR guidelines. |
+| **[.env.example](.env.example)** | The environment variables and what they do. |
+
+## Project structure
+
+```
+party/server.ts        PartyKit room server: identity, validation, broadcast, auto-pass
+src/engine/            Pure, unit-tested game engine (types, deck, rules, engine)
+src/shared/protocol.ts Zod message schemas + client/server message types
+src/store/ src/hooks/  Zustand view store + PartySocket connection
+src/lib/               identity, avatars, asset preloading, env flags
+src/app/               Routes: landing, /create, /room/[code], /demo (dev-only)
+src/components/         Lobby, GameTable, Card/Hand, ColorPicker, RoundEnd, Toasts, ...
+public/                Served card art, fonts, avatars, backgrounds
 ```
 
-> **Windows / OneDrive notes:**
-> - Use `partykit` ≥ 0.0.115 (earlier versions have a dev-server path bug).
-> - Dev defaults to the **webpack** bundler (`next dev --webpack`). Turbopack is
->   available via `npm run dev:next:turbo`, but when the project lives inside a
->   **OneDrive** folder, OneDrive syncs the `.next` cache and can corrupt
->   Turbopack's client manifest — this shows up as *"Could not find the module …
->   in the React Client Manifest."* If you ever hit a stale-cache error, run
->   `npm run clean` (deletes `.next`) and restart. For the smoothest experience,
->   keep the repo outside OneDrive or pause sync on the `.next` folder.
+## Scripts
 
-### Point the client at a different game server
+| Script | Does |
+|---|---|
+| `npm run dev` | Web app + game server together (webpack). |
+| `npm run dev:lan` | Same, but web app bound to `0.0.0.0` for LAN play. |
+| `npm run dev:next` / `dev:party` | Run either process alone. |
+| `npm test` | Engine unit tests (Vitest). |
+| `npm run build` / `start` | Production build / serve. |
+| `npm run deploy:party` | Deploy the game server to PartyKit. |
+| `npm run clean` | Delete the `.next` cache. |
 
-The client reads `NEXT_PUBLIC_PARTYKIT_HOST` (defaults to `127.0.0.1:1999`):
-
-```bash
-# .env.local
-NEXT_PUBLIC_PARTYKIT_HOST=your-project.your-user.partykit.dev
-```
-
-## Test
-
-```bash
-npm test           # engine unit tests (deck, playability, stacking, turn flow, scoring)
-```
-
-## Deploy
-
-- **Game server:** `npm run deploy:party` (PartyKit → Cloudflare). Set
-  `NEXT_PUBLIC_PARTYKIT_HOST` to the deployed party URL.
-- **Web app:** deploy the Next.js app to Vercel.
-
-## House rules (set by host at room creation)
+## House rules (set by the host at room creation)
 
 | Rule | Default | Effect |
 |---|---|---|
 | `unoCall` / `unoPenalty` | on / 2 | Player at 1 card must call UNO; catchable until the next player acts. |
 | `stackDraw2OnDraw2` | off | +2 may be stacked onto +2. |
 | `stackDraw4OnDraw2Or4` | off | +4 may be stacked onto +2 or +4. **+2 onto +4 is never allowed.** |
+| `stacking` | off | Play several same-rank cards (any color) in one turn. |
 | `drawPenaltyBehavior` | drawOneAndPass | Draw one then pass, or keep drawing until playable. |
 | `forcePlay` | off | Must immediately play a drawn card if it's playable. |
 | `dealSize` | 7 | Starting hand size. |
@@ -95,6 +91,10 @@ npm test           # engine unit tests (deck, playability, stacking, turn flow, 
 
 ## Notes / v1 scope
 
-- Per the PRD, room state lives in server memory: a *player* dropping is covered by
-  rejoin; a rare *server* restart drops an in-progress game.
-- Non-goals for v1: spectators, jump-in / 7-0, accounts, chat, cross-session persistence.
+- Room state lives in **server memory**: a *player* dropping is covered by
+  rejoin; a rare *server* restart drops an in-progress game (no database by
+  design).
+- **Non-goals for v1:** spectators, jump-in / 7-0, accounts, chat,
+  cross-session persistence, and **mobile responsiveness**.
+
+Built per [`UNO_PRD.md`](UNO_PRD.md). Design system in [`design.md`](design.md).

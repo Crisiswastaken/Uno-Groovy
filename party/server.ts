@@ -46,7 +46,7 @@ export default class UnoServer implements Party.Server {
     let msg: ClientMessage;
     try {
       msg = clientMessageSchema.parse(JSON.parse(raw));
-    } catch (e) {
+    } catch {
       conn.send(json({ type: "invalidAction", reason: "Malformed message" }));
       return;
     }

@@ -1,9 +1,24 @@
+# Dependencies
 node_modules
+
+# Build output / caches
 .next
 .partykit
 out
 dist
 *.tsbuildinfo
 next-env.d.ts
+
+# Local env files (keep .env.example tracked)
 .env*.local
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Design source art — NOT part of the served app (only public/ is shipped).
+# Kept locally for reference; excluded from the repo to keep it lean.
+/images/
+/UNO-CARDS/
+/UNO-CARDS-V2/
+*.psd

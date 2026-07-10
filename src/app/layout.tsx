@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Splash } from "../components/Splash";
 import { ClickSpark } from "../components/ClickSpark";
+import { MobileGate } from "../components/MobileGate";
 
 export const metadata: Metadata = {
   title: "Custom UNO",
@@ -18,6 +19,7 @@ export default function RootLayout({
       <body>
         <Splash>{children}</Splash>
         <ClickSpark />
+        <MobileGate />
       </body>
     </html>
   );
