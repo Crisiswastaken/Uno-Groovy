@@ -213,51 +213,93 @@ function closeUnoWindow(state: RoomState) {
 // Actions
 // ---------------------------------------------------------------------------
 
+/** Play a single card. Thin wrapper over {@link playCards}. */
 export function playCard(
   state: RoomState,
   playerId: string,
   uid: string,
   chosenColor?: Color,
 ): Result {
+  return playCards(state, playerId, [uid], chosenColor);
+}
+
+/**
+ * Play one or more cards in a single turn. With more than one card the
+ * `stacking` house rule must be on and every card must share the same rank
+ * (number or symbol) — their colors may differ. Effects accumulate: N +2s add
+ * 2N to the draw stack, N skips skip N players, an odd number of reverses flips
+ * direction. The last card played sets the active color (or the chosen color
+ * for wilds).
+ */
+export function playCards(
+  state: RoomState,
+  playerId: string,
+  uids: string[],
+  chosenColor?: Color,
+): Result {
   if (state.phase !== "in_round") return fail("Not in a round");
   const player = currentPlayer(state);
   if (!player || player.playerId !== playerId) return fail("Not your turn");
+  if (uids.length === 0) return fail("No cards to play");
 
-  // Enforce forcePlay: if you drew and the drawn card is playable, you must play it.
+  const uidSet = new Set(uids);
+  if (uidSet.size !== uids.length) return fail("Duplicate card");
+
+  // Enforce forcePlay: if you drew and the drawn card is playable, the play
+  // must include it.
   if (state.pendingPass && state.pendingPass.playerId === playerId && state.pendingPass.mustPlay) {
-    if (!state.pendingPass.drawnUids.includes(uid)) {
+    if (!uids.some((u) => state.pendingPass!.drawnUids.includes(u))) {
       return fail("You must play the card you drew");
     }
   }
 
-  const card = player.hand.find((c) => c.uid === uid);
-  if (!card) return fail("Card not in hand");
+  const found = uids.map((u) => player.hand.find((c) => c.uid === u));
+  if (found.some((c) => !c)) return fail("Card not in hand");
+  const cards = found as Card[];
 
-  if (
-    !canPlay(card, {
-      activeColor: state.activeColor,
-      discardTop: discardTop(state),
-      pendingDraw: state.pendingDraw,
-      config: state.config,
-    })
-  ) {
-    return fail("Card is not playable");
+  // Multi-card play requires the stacking rule and a shared rank.
+  if (cards.length > 1) {
+    if (!state.config.stacking) return fail("Stacking is off");
+    const rank = cards[0].value;
+    if (!cards.every((c) => c.value === rank)) {
+      return fail("Stacked cards must be the same number or symbol");
+    }
   }
 
-  if (isWild(card.value)) {
-    if (!chosenColor) return fail("Choose a color for the wild");
+  // At least one card must be a legal opener (respecting any pending stack).
+  const opts = {
+    activeColor: state.activeColor,
+    discardTop: discardTop(state),
+    pendingDraw: state.pendingDraw,
+    config: state.config,
+  };
+  const openerIdx = cards.findIndex((c) => canPlay(c, opts));
+  if (openerIdx === -1) return fail("Card is not playable");
+
+  // Opener leads; the rest keep their order (the last card sets active color).
+  const opener = cards[openerIdx];
+  const ordered = [opener, ...cards.filter((_, i) => i !== openerIdx)];
+  const finalCard = ordered[ordered.length - 1];
+  const value = opener.value; // all played cards share this rank
+  const count = ordered.length;
+
+  if (isWild(finalCard.value) && !chosenColor) {
+    return fail("Choose a color for the wild");
   }
 
   closeUnoWindow(state);
   state.pendingPass = null;
 
-  // Move card to discard.
-  player.hand = player.hand.filter((c) => c.uid !== uid);
-  state.discardPile.push(card);
-  state.activeColor = isWild(card.value) ? chosenColor! : card.color;
+  // Move every played card to the discard, in order.
+  player.hand = player.hand.filter((c) => !uidSet.has(c.uid));
+  for (const c of ordered) state.discardPile.push(c);
+  state.activeColor = isWild(finalCard.value) ? chosenColor! : finalCard.color;
 
-  const label = describeCard(card, state.activeColor);
-  log(state, `${player.displayName} played ${label}`, player.seat);
+  if (count > 1) {
+    log(state, `${player.displayName} played ${count}× ${rankLabel(value)}`, player.seat);
+  } else {
+    log(state, `${player.displayName} played ${describeCard(finalCard, state.activeColor)}`, player.seat);
+  }
 
   // Win check.
   if (player.hand.length === 0) {
@@ -274,24 +316,25 @@ export function playCard(
     player.hasCalledUno = false;
   }
 
-  // Card effects.
+  // Card effects, accumulated across the stack.
   const n = state.players.length;
-  switch (card.value) {
+  switch (value) {
     case "skip":
-      log(state, "Next player skipped", null);
-      advance(state, 2);
+      log(state, count > 1 ? `${count} players skipped` : "Next player skipped", null);
+      advance(state, 1 + count);
       break;
     case "reverse":
-      state.direction = state.direction === 1 ? -1 : 1;
-      if (n === 2) advance(state, 2); // acts as skip with 2 players
+      if (count % 2 === 1) state.direction = state.direction === 1 ? -1 : 1;
+      // An odd number of reverses acts as a skip in a 2-player game.
+      if (n === 2 && count % 2 === 1) advance(state, 2);
       else advance(state, 1);
       break;
     case "draw2":
-      state.pendingDraw += 2;
+      state.pendingDraw += 2 * count;
       advance(state, 1);
       break;
     case "wild_draw4":
-      state.pendingDraw += 4;
+      state.pendingDraw += 4 * count;
       advance(state, 1);
       break;
     default:
@@ -465,6 +508,18 @@ function describeCard(card: Card, activeColor: Color | null): string {
     draw2: "+2",
   };
   return `${card.color} ${label[card.value] ?? card.value}`;
+}
+
+/** Colorless rank label used for stacked plays, e.g. "5", "Skip", "+2". */
+function rankLabel(value: Card["value"]): string {
+  const label: Record<string, string> = {
+    skip: "Skip",
+    reverse: "Reverse",
+    draw2: "+2",
+    wild: "Wild",
+    wild_draw4: "Wild +4",
+  };
+  return label[value] ?? value;
 }
 
 /** Build the personalized, public-safe snapshot for one player. */

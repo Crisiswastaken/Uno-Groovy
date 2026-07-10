@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ClientView } from "../engine/types";
 import type { ClientMessage } from "../shared/protocol";
+import { Card as Img } from "./ui/Card";
 
 export function Lobby({
   view,
@@ -30,8 +31,21 @@ export function Lobby({
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center py-12 px-4">
-      <div className="w-full max-w-md">
+    <main className="relative min-h-screen flex flex-col items-center justify-center py-12 px-4 overflow-hidden">
+      {/* Branded groovy backdrop (same as the landing), so the lobby reads as a
+          proper entry screen rather than the misplaced game-table art. */}
+      <Img
+        src="/home/background.png"
+        alt=""
+        fill
+        rounded={false}
+        priority
+        sizes="100vw"
+        className="object-cover -z-10 select-none pointer-events-none"
+      />
+
+      {/* A frosted sheet lifts the lobby cleanly off the busy background. */}
+      <div className="w-full max-w-md bg-uno-cream/80 backdrop-blur-2xl rounded-[28px] border-2 border-white/50 shadow-[0_20px_60px_rgba(43,42,39,0.25)] p-6">
         <h1 className="font-display text-5xl mb-1">Lobby</h1>
         <p className="text-uno-ink1 text-sm mb-6">
           Waiting for players — host starts when ready (2–4).
@@ -74,7 +88,7 @@ export function Lobby({
           {Array.from({ length: 4 - view.players.length }).map((_, i) => (
             <div
               key={i}
-              className="border-2 border-dashed border-uno-ink/15 rounded-card px-4 py-3 text-uno-ink2"
+              className="bg-uno-cream/60 border-2 border-dashed border-uno-ink/15 rounded-card px-4 py-3 text-uno-ink2"
             >
               empty seat
             </div>
@@ -94,35 +108,7 @@ export function Lobby({
             Waiting for host to start…
           </div>
         )}
-
-        <ConfigSummary view={view} />
       </div>
     </main>
-  );
-}
-
-function ConfigSummary({ view }: { view: ClientView }) {
-  const c = view.config;
-  const items: [string, string][] = [
-    ["Deal size", String(c.dealSize)],
-    ["UNO call", c.unoCall ? `on (−${c.unoPenalty})` : "off"],
-    ["Stack +2/+2", c.stackDraw2OnDraw2 ? "on" : "off"],
-    ["Stack +4", c.stackDraw4OnDraw2Or4 ? "on" : "off"],
-    ["Draw rule", c.drawPenaltyBehavior === "drawUntilPlayable" ? "until playable" : "one & pass"],
-    ["Force play", c.forcePlay ? "on" : "off"],
-    ["Scoring", c.scoringMode === "targetScore" ? `to ${c.targetScore}` : "single round"],
-  ];
-  return (
-    <div className="mt-6 grid grid-cols-2 gap-2 text-xs">
-      {items.map(([k, v]) => (
-        <div
-          key={k}
-          className="bg-uno-white1 border-2 border-uno-ink/10 rounded-[14px] px-3 py-2 flex justify-between"
-        >
-          <span className="text-uno-ink2">{k}</span>
-          <span className="font-semibold">{v}</span>
-        </div>
-      ))}
-    </div>
   );
 }

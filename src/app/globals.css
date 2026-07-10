@@ -89,6 +89,79 @@ body {
   min-height: 100vh;
 }
 
+/* ------------------------------------------------------ Loading splash ---
+   First-visit intro (src/components/Splash.tsx): an opaque cream screen with
+   the centered loading animation, which zoom-blurs away to reveal the app once
+   the animation finishes and every asset is cached. Background matches the
+   video's own backdrop (#eee4d9). */
+.splash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #eee4d9;
+  will-change: transform, filter, opacity;
+}
+
+.splash-video {
+  width: clamp(140px, 26vw, 240px);
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Zoom-blur exit: the splash rushes toward the viewer and dissolves while the
+   app underneath settles in from a slight over-zoom. */
+.splash-overlay--exit {
+  pointer-events: none;
+  animation: intro-zoom-out 650ms cubic-bezier(0.7, 0, 0.84, 0) forwards;
+}
+.intro-content-enter {
+  animation: intro-counter-zoom 650ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes intro-zoom-out {
+  0% {
+    transform: scale(1);
+    filter: blur(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.6);
+    filter: blur(14px);
+    opacity: 0;
+  }
+}
+
+@keyframes intro-counter-zoom {
+  0% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Reduced motion: swap the zoom/blur for a plain fade. */
+@media (prefers-reduced-motion: reduce) {
+  .splash-overlay--exit {
+    animation: intro-fade-out 300ms ease forwards;
+  }
+  .intro-content-enter {
+    animation: none;
+  }
+  @keyframes intro-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}
+
 /* --------------------------------------------------------- Scrollbar ---
    Thin, rounded scrollbar in the design-system neutrals. The transparent
    border + padding-box clip give it a slim inset pill that reads correctly

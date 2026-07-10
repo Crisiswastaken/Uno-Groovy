@@ -37,6 +37,13 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    title: "In-round table",
+    blurb: "The live game board (the real GameTable with mock in-round data) — your turn, an active color, seats on every edge, and a catchable opponent.",
+    items: [
+      { label: "Game table", note: "live /room board · your turn", src: "/demo/part/gametable", w: 960, h: 600 },
+    ],
+  },
+  {
     title: "In-round popups",
     blurb: "Overlays that appear during play.",
     items: [

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Splash } from "../components/Splash";
 
 export const metadata: Metadata = {
   title: "Custom UNO",
@@ -13,7 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <Splash>{children}</Splash>
+      </body>
     </html>
   );
 }

@@ -6,6 +6,7 @@ import {
   createRoom,
   drawCard,
   playCard,
+  playCards,
   startRound,
 } from "./engine";
 import { Card, DEFAULT_CONFIG, RoomState, RuleConfig } from "./types";
@@ -126,5 +127,66 @@ describe("uno + scoring", () => {
     playCard(s, "p1", s.players[0].hand[0].uid);
     expect(s.phase).toBe("round_end");
     expect(s.roundWinnerId).toBe("p1");
+  });
+});
+
+describe("stacking", () => {
+  function room3(config: Partial<RuleConfig> = {}): RoomState {
+    const s = createRoom("T3", { ...DEFAULT_CONFIG, ...config });
+    addPlayer(s, "p1", "Alice");
+    addPlayer(s, "p2", "Bob");
+    addPlayer(s, "p3", "Cara");
+    return s;
+  }
+
+  it("plays several same-rank cards (any color) in one turn when enabled", () => {
+    const s = room({ stacking: true });
+    setup(s, c("green", "5"), [c("red", "5"), c("blue", "5"), c("red", "8")]);
+    const uids = [s.players[0].hand[0].uid, s.players[0].hand[1].uid];
+    const r = playCards(s, "p1", uids);
+    expect(r.ok).toBe(true);
+    expect(s.players[0].hand.length).toBe(1);
+    expect(s.currentSeat).toBe(1);
+    expect(s.activeColor).toBe("blue"); // the last card sets the color
+  });
+
+  it("rejects multi-card plays when stacking is off", () => {
+    const s = room({ stacking: false });
+    setup(s, c("green", "5"), [c("red", "5"), c("blue", "5")]);
+    const uids = s.players[0].hand.map((h) => h.uid);
+    expect(playCards(s, "p1", uids).ok).toBe(false);
+  });
+
+  it("rejects a stack of mismatched ranks", () => {
+    const s = room({ stacking: true });
+    setup(s, c("green", "5"), [c("red", "5"), c("red", "8")]);
+    const uids = s.players[0].hand.map((h) => h.uid);
+    expect(playCards(s, "p1", uids).ok).toBe(false);
+  });
+
+  it("accumulates +2 draw penalties across a stack", () => {
+    const s = room({ stacking: true });
+    setup(s, c("red", "5"), [c("red", "draw2"), c("blue", "draw2"), c("red", "1")]);
+    const uids = [s.players[0].hand[0].uid, s.players[0].hand[1].uid];
+    playCards(s, "p1", uids);
+    expect(s.pendingDraw).toBe(4);
+    expect(s.currentSeat).toBe(1);
+  });
+
+  it("two skips skip two players", () => {
+    const s = room3({ stacking: true });
+    s.phase = "in_round";
+    s.discardPile = [c("red", "5")];
+    s.activeColor = "red";
+    s.currentSeat = 0;
+    s.pendingDraw = 0;
+    s.pendingPass = null;
+    s.drawPile = buildDeck();
+    s.players[0].hand = [c("red", "skip"), c("blue", "skip"), c("red", "1")];
+    s.players[1].hand = [c("green", "0")];
+    s.players[2].hand = [c("green", "1")];
+    playCards(s, "p1", [s.players[0].hand[0].uid, s.players[0].hand[1].uid]);
+    // Skip p2 and p3 → back to p1.
+    expect(s.currentSeat).toBe(0);
   });
 });

@@ -64,6 +64,13 @@ export default function CreatePage() {
             onChange={(v) => set("stackDraw4OnDraw2Or4", v)}
           />
 
+          <ToggleCard
+            label="Stacking"
+            hint="Play multiple same number/symbol cards at once"
+            value={config.stacking}
+            onChange={(v) => set("stacking", v)}
+          />
+
           <SelectCard
             label="Draw penalty"
             hint="What happens on a forced draw"

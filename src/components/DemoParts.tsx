@@ -4,6 +4,7 @@ import type { ClientView } from "../engine/types";
 import { DEFAULT_CONFIG } from "../engine/types";
 import type { ClientMessage } from "../shared/protocol";
 import { ColorPicker } from "./ColorPicker";
+import { GameTable } from "./GameTable";
 import { Lobby } from "./Lobby";
 import { NameGate } from "./NameGate";
 import { RoundEnd } from "./RoundEnd";
@@ -162,6 +163,43 @@ export function PartView({ name }: { name: string }) {
           send={noop}
         />
       );
+
+    case "gametable": {
+      // Live in-round board with a full roster (left/top/right seats), a
+      // playable hand on your turn, an active color, and a catchable opponent.
+      const roster: PlayerView[] = [
+        player({ playerId: "p1", displayName: "Ana", seat: 0, handCount: 6 }),
+        player({ playerId: "p2", displayName: "Maya", seat: 1, handCount: 3 }),
+        player({ playerId: "p3", displayName: "Leo", seat: 2, handCount: 7 }),
+        player({ playerId: "p4", displayName: "Sam", seat: 3, handCount: 1, isCatchable: true }),
+      ];
+      // A red 5 + blue 5 to exercise the Stacking selection (both are openers
+      // against a 5 on top), plus a wild and spare cards.
+      const hand: ClientView["yourHand"] = [
+        { uid: "h1", color: "red", value: "5" },
+        { uid: "h2", color: "blue", value: "5" },
+        { uid: "h3", color: "yellow", value: "3" },
+        { uid: "h4", color: null, value: "wild_draw4" },
+        { uid: "h5", color: "green", value: "6" },
+        { uid: "h6", color: "red", value: "8" },
+      ];
+      return (
+        <GameTable
+          view={view({
+            phase: "in_round",
+            players: roster,
+            currentSeat: 0,
+            activeColor: "green",
+            discardTop: { uid: "d0", color: "green", value: "5" },
+            yourHand: hand,
+            pendingDraw: 0,
+            config: { ...DEFAULT_CONFIG, stacking: true },
+            lastActionLog: [{ id: "a1", text: "Leo played a green 5", seat: 2 }],
+          })}
+          send={noop}
+        />
+      );
+    }
 
     case "toasts":
       return <ToastsPreview />;

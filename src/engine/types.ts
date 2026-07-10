@@ -23,6 +23,12 @@ export interface RuleConfig {
   unoPenalty: number;
   stackDraw2OnDraw2: boolean;
   stackDraw4OnDraw2Or4: boolean;
+  /**
+   * Stacking: play several cards of the same rank (number or symbol) in a
+   * single turn, regardless of their color — e.g. two 5s, or a red Skip and a
+   * blue Skip together. Off by default.
+   */
+  stacking: boolean;
   drawPenaltyBehavior: "drawOneAndPass" | "drawUntilPlayable";
   forcePlay: boolean;
   dealSize: number;
@@ -35,6 +41,7 @@ export const DEFAULT_CONFIG: RuleConfig = {
   unoPenalty: 2,
   stackDraw2OnDraw2: false,
   stackDraw4OnDraw2Or4: false,
+  stacking: false,
   drawPenaltyBehavior: "drawOneAndPass",
   forcePlay: false,
   dealSize: 7,

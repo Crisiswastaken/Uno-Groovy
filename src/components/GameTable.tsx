@@ -1,14 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Card, ClientView, Color } from "../engine/types";
 import { canPlay, isWild } from "../engine/rules";
 import type { ClientMessage } from "../shared/protocol";
 import { avatarFor } from "../lib/avatars";
-import { CardFace, swatch } from "./Card";
+import { CardBack, CardFace, swatch } from "./Card";
 import { ColorPicker } from "./ColorPicker";
 import { OpponentSeat } from "./OpponentSeat";
 import { Card as Img } from "./ui/Card";
+
+/* Live game table, styled to match the /demo redesign (GameDemo): a focal
+   discard on the star, a tucked draw pile, translucent opponent seats, and a
+   short glass hand tray with the cards rising out of it. All game state is
+   driven by `view` and actions flow through `send`. */
 
 type Orientation = "top" | "left" | "right";
 
@@ -27,8 +32,6 @@ export function GameTable({
   view: ClientView;
   send: (m: ClientMessage) => void;
 }) {
-  const [pendingWild, setPendingWild] = useState<Card | null>(null);
-
   const me = view.players.find((p) => p.playerId === view.youPlayerId);
   const mySeat = me?.seat ?? -1;
   const isMyTurn = view.currentSeat === mySeat && view.phase === "in_round";
@@ -55,39 +58,104 @@ export function GameTable({
     return { left, right, top };
   }, [opponents]);
 
-  const playable = (card: Card) =>
+  const myHand = view.yourHand;
+  const stackingOn = view.config.stacking;
+  const mustPlay = view.pendingPass?.mustPlay ?? false;
+  const drawnUids = view.pendingPass?.drawnUids ?? [];
+
+  const handByUid = useMemo(() => {
+    const m = new Map<string, Card>();
+    for (const c of myHand) m.set(c.uid, c);
+    return m;
+  }, [myHand]);
+
+  /** True if `card` can legally open a turn right now (draw stack + forcePlay). */
+  const canOpenWith = (card: Card) =>
     isMyTurn &&
     canPlay(card, {
       activeColor: view.activeColor,
       discardTop: view.discardTop,
       pendingDraw: view.pendingDraw,
       config: view.config,
-    });
+    }) &&
+    (!mustPlay || drawnUids.includes(card.uid));
 
-  const mustPlay = view.pendingPass?.mustPlay ?? false;
-  const drawnUids = view.pendingPass?.drawnUids ?? [];
+  // Stacking selection — uids in click order; the first sets the shared rank.
+  const [selected, setSelected] = useState<string[]>([]);
+  const selRank = selected.length ? handByUid.get(selected[0])?.value ?? null : null;
 
-  const onPlay = (card: Card) => {
-    if (!playable(card)) return;
-    if (mustPlay && !drawnUids.includes(card.uid)) return;
-    if (isWild(card.value)) {
-      setPendingWild(card);
-    } else {
-      send({ type: "playCard", uid: card.uid });
+  // Drop the selection whenever the turn or the board shifts under us.
+  useEffect(() => {
+    setSelected([]);
+  }, [isMyTurn, view.discardTop?.uid, view.currentSeat]);
+
+  // Cards awaiting a color pick (a wild being played), as uids; null when none.
+  const [pendingWild, setPendingWild] = useState<string[] | null>(null);
+
+  const sendPlay = (uids: string[], color?: Color) => {
+    if (uids.length === 0) return;
+    if (uids.length === 1) send({ type: "playCard", uid: uids[0], chosenColor: color });
+    else send({ type: "playCards", uids, chosenColor: color });
+    setSelected([]);
+  };
+
+  /** Commit a set of cards; wilds route through the color picker first. */
+  const commit = (uids: string[]) => {
+    const cards = uids.map((u) => handByUid.get(u)).filter(Boolean) as Card[];
+    if (cards.length === 0 || !cards.some(canOpenWith)) return;
+    if (isWild(cards[cards.length - 1].value)) setPendingWild(uids);
+    else sendPlay(uids);
+  };
+
+  // Tappable if it's a legal opener, or (mid-stack) matches the selected rank.
+  const cardClickable = (card: Card) =>
+    canOpenWith(card) ||
+    (stackingOn && selected.length > 0 && card.value === selRank);
+
+  const onCardClick = (card: Card) => {
+    if (!isMyTurn) return;
+
+    if (!stackingOn) {
+      if (canOpenWith(card)) commit([card.uid]);
+      return;
     }
+
+    if (selected.length === 0) {
+      if (!canOpenWith(card)) return;
+      const sameRank = myHand.filter((c) => c.value === card.value);
+      if (sameRank.length <= 1) commit([card.uid]); // nothing to stack — just play
+      else setSelected([card.uid]); // enter selection
+      return;
+    }
+
+    if (card.value !== selRank) {
+      // Tapped a different rank — switch the selection to it.
+      if (!canOpenWith(card)) return;
+      const sameRank = myHand.filter((c) => c.value === card.value);
+      if (sameRank.length <= 1) commit([card.uid]);
+      else setSelected([card.uid]);
+      return;
+    }
+
+    // Same rank — toggle in/out of the stack.
+    setSelected((sel) =>
+      sel.includes(card.uid) ? sel.filter((u) => u !== card.uid) : [...sel, card.uid],
+    );
   };
 
   const confirmWild = (color: Color) => {
-    if (pendingWild) send({ type: "playCard", uid: pendingWild.uid, chosenColor: color });
+    if (pendingWild) sendPlay(pendingWild, color);
     setPendingWild(null);
   };
 
+  const selectionPlayable = selected.some((u) => {
+    const c = handByUid.get(u);
+    return c ? canOpenWith(c) : false;
+  });
+
   const canDraw = isMyTurn && !view.pendingPass;
   const canPass = isMyTurn && !!view.pendingPass && !mustPlay;
-  const myHand = view.yourHand;
   const canCallUno = myHand.length <= 2 && !me?.hasCalledUno;
-
-  const current = view.players.find((p) => p.seat === view.currentSeat);
 
   const renderSeat = (p: (typeof opponents)[number], o: Orientation) => (
     <OpponentSeat
@@ -100,33 +168,40 @@ export function GameTable({
   );
 
   return (
-    <main className="fixed inset-0 overflow-hidden select-none">
+    <main className="fixed inset-0 overflow-hidden select-none font-body">
       {/* Top seats */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-10">
+      <div className="absolute top-5 left-1/2 -translate-x-1/2 flex gap-10">
         {seats.top.map((p) => renderSeat(p, "top"))}
       </div>
 
       {/* Left seats */}
-      <div className="absolute left-5 top-1/2 -translate-y-1/2 flex flex-col gap-8">
+      <div className="absolute left-7 top-[45%] -translate-y-1/2 flex flex-col gap-8">
         {seats.left.map((p) => renderSeat(p, "left"))}
       </div>
 
       {/* Right seats */}
-      <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8">
+      <div className="absolute right-7 top-[45%] -translate-y-1/2 flex flex-col gap-8">
         {seats.right.map((p) => renderSeat(p, "right"))}
       </div>
 
-      {/* Center pile — the discard lands dead-center on the star, with the
-          draw pile off to its left and the direction arrows hugging it. */}
-      <div className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2">
-        <div className="relative">
+      {/* Center piles — discard dead-center on the star, draw pile tucked left. */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+        <div className="relative grid place-items-center">
+          {view.activeColor && (
+            <span
+              aria-hidden
+              className="focal-halo absolute left-1/2 top-1/2 -z-10 rounded-full blur-2xl pointer-events-none"
+              style={{
+                width: 300,
+                height: 300,
+                background: `radial-gradient(circle, ${swatch[view.activeColor]}55 0%, ${swatch[view.activeColor]}22 40%, transparent 70%)`,
+              }}
+            />
+          )}
+
           <DirectionArrows direction={view.direction} />
 
-          {/* Discard — angled, layered, shadowed (centered on the star) */}
-          <DiscardPile top={view.discardTop} activeColor={view.activeColor} />
-
-          {/* Draw pile, tucked to the left of the discard */}
-          <div className="absolute right-full top-1/2 -translate-y-1/2 mr-8">
+          <div className="absolute right-full top-1/2 -translate-y-1/2 mr-12">
             <DrawPile
               count={view.drawPileCount}
               pendingDraw={view.pendingDraw}
@@ -134,86 +209,73 @@ export function GameTable({
               onDraw={() => send({ type: "drawCard" })}
             />
           </div>
+
+          <DiscardPile top={view.discardTop} activeColor={view.activeColor} />
         </div>
       </div>
 
-      {/* Turn indicator + last action, floating just above the hand tray */}
-      <div className="absolute bottom-[188px] left-1/2 -translate-x-1/2 text-center pointer-events-none">
-        <div className="text-sm font-bold">
-          {isMyTurn ? (
-            <span className="text-uno-green">Your turn</span>
-          ) : (
-            <span className="text-uno-ink1">
-              {current?.displayName ?? "…"}'s turn
-            </span>
-          )}
-        </div>
-        <div className="text-xs font-medium text-uno-ink2 h-4 mt-0.5 max-w-md truncate">
-          {view.lastActionLog[view.lastActionLog.length - 1]?.text}
-        </div>
-      </div>
-
-      {/* Bottom tray: you + hand */}
-      <div className="absolute bottom-0 inset-x-0">
-        <div className="mx-auto max-w-6xl bg-uno-cream/85 backdrop-blur-sm rounded-t-[32px] border-t-2 border-x-2 border-uno-ink/10 shadow-[0_-6px_24px_rgba(43,42,39,0.12)] px-6 pt-4 pb-3">
-          <div className="flex items-end gap-4">
-            {/* You */}
-            <div className="flex flex-col items-center gap-1 pb-4 shrink-0">
-              <span className="px-2 py-0.5 rounded-full bg-uno-ink text-uno-cream text-[11px] font-bold">
+      {/* Bottom hand tray — a short glass slab the cards rise out of. */}
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[860px]">
+        <div className="relative bg-uno-cream/45 backdrop-blur-2xl rounded-t-[30px] border-t border-x border-white/45 shadow-[0_-10px_44px_rgba(43,42,39,0.18),inset_0_1px_0_rgba(255,255,255,0.55)] pl-4 pr-5 pt-2 pb-4">
+          <div className="flex items-end gap-2">
+            {/* You — the local player. */}
+            <div className="flex flex-col items-center gap-1 pb-3 shrink-0 z-10">
+              <MyAvatar seat={mySeat} glow={isMyTurn} />
+              <span className="px-2.5 py-0.5 rounded-[10px] bg-uno-ink text-uno-cream text-[11px] font-extrabold leading-none shadow-[0_2px_5px_rgba(43,42,39,0.3)]">
                 You
               </span>
-              <div
-                className={`w-14 h-14 rounded-2xl overflow-hidden border-[3px] border-uno-cream shadow-[0_3px_8px_rgba(43,42,39,0.28)] bg-uno-white1 ${
-                  isMyTurn ? "turn-glow" : ""
-                }`}
-              >
-                <Img
-                  src={avatarFor(mySeat)}
-                  alt=""
-                  width={56}
-                  height={56}
-                  rounded={false}
-                  style={{ width: "100%", height: "100%" }}
-                  className="object-cover pointer-events-none"
-                  draggable={false}
-                  unoptimized
-                />
-              </div>
             </div>
 
             {/* Hand */}
             <div className="flex-1 min-w-0">
               <Hand
                 cards={myHand}
-                isPlayable={(c) => playable(c) && (!mustPlay || drawnUids.includes(c.uid))}
+                isPlayable={cardClickable}
                 isHighlighted={(c) => mustPlay && drawnUids.includes(c.uid)}
-                onPlay={onPlay}
+                isSelected={(c) => selected.includes(c.uid)}
+                onPlay={onCardClick}
               />
             </div>
 
-            {/* UNO! call button */}
-            <div className="flex flex-col items-center gap-2 pb-3 shrink-0">
-              {canPass && (
-                <button
-                  onClick={() => send({ type: "passAfterDraw" })}
-                  className="bg-uno-white1 border-2 border-uno-ink/15 hover:bg-uno-white2 hover:-translate-y-0.5 font-bold text-sm px-4 py-1.5 rounded-full transition"
-                >
-                  Pass
-                </button>
-              )}
-              <UnoButton
-                enabled={canCallUno}
-                onClick={() => send({ type: "callUno" })}
-              />
-            </div>
+            {/* Contextual actions, right by the hand so they're easy to reach. */}
+            {(selected.length > 0 || canPass) && (
+              <div className="flex flex-col items-stretch gap-2 pb-3 shrink-0 z-10 w-[96px]">
+                {selected.length > 0 ? (
+                  <>
+                    <button
+                      onClick={() => commit(selected)}
+                      disabled={!selectionPlayable}
+                      className="bg-uno-green text-uno-cream font-extrabold text-sm uppercase tracking-wide px-3 py-2.5 rounded-[16px] border-2 border-uno-ink/15 shadow-[0_4px_0_rgba(43,42,39,0.25)] hover:-translate-y-0.5 hover:brightness-105 active:translate-y-[2px] active:shadow-none disabled:opacity-40 disabled:translate-y-0 disabled:shadow-none transition"
+                    >
+                      Play {selected.length}
+                    </button>
+                    <button
+                      onClick={() => setSelected([])}
+                      className="text-uno-ink1 hover:text-uno-ink font-bold text-xs py-1 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => send({ type: "passAfterDraw" })}
+                    className="bg-uno-cream text-uno-ink font-extrabold text-sm uppercase tracking-wide px-3 py-2.5 rounded-[16px] border-2 border-uno-ink/15 shadow-[0_4px_0_rgba(43,42,39,0.22)] hover:-translate-y-0.5 hover:bg-uno-white2 active:translate-y-[2px] active:shadow-none transition"
+                  >
+                    Pass
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-          {mustPlay && (
-            <div className="text-center text-uno-red text-xs font-bold mt-1">
-              You must play the drawn card
-            </div>
-          )}
         </div>
       </div>
+
+      {/* UNO! call, bottom-right. */}
+      <UnoButton
+        className="absolute bottom-8 right-10"
+        enabled={canCallUno}
+        onClick={() => send({ type: "callUno" })}
+      />
 
       {pendingWild && (
         <ColorPicker onPick={confirmWild} onCancel={() => setPendingWild(null)} />
@@ -222,7 +284,31 @@ export function GameTable({
   );
 }
 
-/* ----------------------------------------------------------- Draw pile --- */
+/* ----------------------------------------------------------- Local avatar --- */
+
+function MyAvatar({ seat, glow }: { seat: number; glow: boolean }) {
+  const size = 52;
+  return (
+    <div
+      style={{ width: size, height: size }}
+      className={`shrink-0 rounded-[18px] card-shadow ${glow ? "turn-glow" : ""}`}
+    >
+      <Img
+        src={avatarFor(seat)}
+        alt=""
+        width={size}
+        height={size}
+        rounded={false}
+        unoptimized
+        draggable={false}
+        style={{ width: "100%", height: "100%" }}
+        className="object-cover pointer-events-none rounded-[18px]"
+      />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------- Draw pile --- */
 
 function DrawPile({
   count,
@@ -235,21 +321,25 @@ function DrawPile({
   canDraw: boolean;
   onDraw: () => void;
 }) {
-  const W = 118;
-  // A few offset backs beneath the top card imply a thick, tappable deck.
+  const W = 108; // a touch smaller than the discard, so the discard reads focal
   const layers = Math.min(4, Math.max(1, Math.ceil(count / 8)));
   return (
     <button
+      type="button"
       onClick={() => canDraw && onDraw()}
       disabled={!canDraw}
-      title="Draw a card"
-      style={{ width: W, height: Math.round((W * 3) / 2) + 8 }}
-      className={`relative shrink-0 transition-transform duration-200 ${
-        canDraw
-          ? "hover:-translate-y-2 hover:rotate-[-3deg] cursor-pointer"
-          : "cursor-default"
+      style={{ width: W, height: Math.round((W * 3) / 2) + 10 }}
+      className={`group relative shrink-0 transition-transform duration-200 ${
+        canDraw ? "cursor-pointer hover:-translate-y-1" : "cursor-default"
       }`}
+      title="Draw a card"
     >
+      {/* Soft contact shadow grounding the deck on the table. */}
+      <span
+        aria-hidden
+        className="absolute left-1/2 -translate-x-1/2 rounded-[50%] blur-md pointer-events-none"
+        style={{ width: W * 0.82, height: 20, bottom: -10, zIndex: 0, background: "rgba(43,42,39,0.30)" }}
+      />
       {Array.from({ length: layers }).map((_, i) => {
         const isTop = i === layers - 1;
         return (
@@ -258,16 +348,7 @@ function DrawPile({
             className={isTop ? "relative card-shadow" : "absolute inset-x-0 top-0"}
             style={{ transform: `translate(${i * -2}px, ${i * 3}px)`, zIndex: i }}
           >
-            <Img
-              src="/cards/back.png"
-              alt={isTop ? "draw pile" : ""}
-              width={W}
-              height={Math.round((W * 3) / 2)}
-              style={{ width: W, height: "auto" }}
-              className="rounded-[10px] pointer-events-none"
-              draggable={false}
-              unoptimized
-            />
+            <CardBack width={W} />
           </div>
         );
       })}
@@ -276,11 +357,23 @@ function DrawPile({
           +{pendingDraw}
         </span>
       )}
+      {canDraw && (
+        <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 z-20 px-2 py-0.5 rounded-full bg-uno-ink/85 text-uno-cream text-[10px] font-bold tracking-wide opacity-0 group-hover:opacity-100 transition-opacity">
+          DRAW
+        </span>
+      )}
     </button>
   );
 }
 
-/* -------------------------------------------------------- Discard pile --- */
+/* ---------------------------------------------------------- Discard pile --- */
+
+// Cosmetic cards fanned under the live discard, so the pile reads with depth.
+const GHOSTS: { card: Card; rot: number; x: number; y: number }[] = [
+  { card: { uid: "ghost-g", color: "green", value: "reverse" }, rot: -15, x: -16, y: 6 },
+  { card: { uid: "ghost-b", color: "blue", value: "reverse" }, rot: 13, x: 14, y: 2 },
+  { card: { uid: "ghost-r", color: "red", value: "reverse" }, rot: -5, x: -3, y: -3 },
+];
 
 function DiscardPile({
   top,
@@ -289,41 +382,40 @@ function DiscardPile({
   top: Card | null;
   activeColor: Color | null;
 }) {
-  // Static decorative cards fanned behind the live top card, so the pile
-  // always reads with depth. Colors are cosmetic (edges peeking out).
-  const ghosts = [
-    { rot: -15, x: -14, y: 6, c: "green" as Color },
-    { rot: 12, x: 12, y: 2, c: "blue" as Color },
-    { rot: -5, x: -4, y: -4, c: "red" as Color },
-  ];
-  const W = 132;
+  const W = 150; // the board's primary focal point
   const h = Math.round((W * 3) / 2);
-
   return (
-    <div
-      className="relative shrink-0"
-      style={{ width: W + 30, height: h + 20 }}
-    >
-      {ghosts.map((g, i) => (
-        <div
-          key={i}
-          className="absolute left-1/2 top-1/2 rounded-[12px] card-shadow-sm"
+    <div className="relative shrink-0" style={{ width: W + 40, height: h + 30 }}>
+      {/* Active-color ring bloom hugging the top card. */}
+      {activeColor && (
+        <span
+          aria-hidden
+          className="absolute left-1/2 top-1/2 rounded-[20px] pointer-events-none"
           style={{
-            width: W,
-            height: h,
-            marginLeft: -W / 2 + g.x,
-            marginTop: -h / 2 + g.y,
-            transform: `rotate(${g.rot}deg)`,
-            background: swatch[g.c],
-            border: "5px solid var(--color-uno-cream)",
+            width: W + 10,
+            height: h + 10,
+            marginLeft: -(W + 10) / 2,
+            marginTop: -(h + 10) / 2,
+            transform: "rotate(-6deg)",
+            boxShadow: `0 0 0 4px ${swatch[activeColor]}66`,
           }}
         />
+      )}
+
+      {GHOSTS.map((g) => (
+        <div
+          key={g.card.uid}
+          className="absolute left-1/2 top-1/2 card-shadow-sm"
+          style={{ marginLeft: -W / 2 + g.x, marginTop: -h / 2 + g.y, transform: `rotate(${g.rot}deg)` }}
+        >
+          <CardFace card={g.card} width={W} />
+        </div>
       ))}
 
       {top && (
         <div
           key={top.uid}
-          className="absolute left-1/2 top-1/2 animate-card-drop"
+          className="absolute left-1/2 top-1/2 card-shadow-lg animate-card-drop"
           style={
             {
               marginLeft: -W / 2,
@@ -333,9 +425,7 @@ function DiscardPile({
             } as React.CSSProperties
           }
         >
-          <div className="card-shadow">
-            <CardFace card={top} width={W} />
-          </div>
+          <CardFace card={top} width={W} />
           {activeColor && isWild(top.value) && (
             <span
               className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full border-[3px] border-uno-cream shadow"
@@ -349,35 +439,36 @@ function DiscardPile({
   );
 }
 
-/* -------------------------------------------------------- Direction arc --- */
+/* -------------------------------------------------------- Direction arcs --- */
 
 function DirectionArrows({ direction }: { direction: 1 | -1 }) {
-  const reversed = direction === -1;
   return (
     <div
       aria-hidden
-      className="absolute left-1/2 top-1/2 pointer-events-none text-uno-ink1/60 arrow-drift"
-      style={{ width: 320, height: 320, transform: `translate(-50%,-50%) scaleX(${reversed ? -1 : 1})` }}
+      className="absolute left-1/2 top-1/2 pointer-events-none text-uno-ink1/45 arrow-drift"
+      style={{
+        width: 360,
+        height: 360,
+        transform: `translate(-50%,-50%) scaleX(${direction === -1 ? -1 : 1})`,
+      }}
     >
       <svg viewBox="0 0 320 320" className="w-full h-full" fill="none">
-        {/* top-right arc, sweeping clockwise */}
         <path
           d="M250 92 A130 130 0 0 1 250 228"
           stroke="currentColor"
-          strokeWidth="6"
+          strokeWidth="7"
           strokeLinecap="round"
-          strokeDasharray="1.5 16"
+          strokeDasharray="1.5 17"
         />
-        <path d="M250 228 l-15 -4 l12 -13 z" fill="currentColor" />
-        {/* bottom-left arc */}
+        <path d="M250 228 l-16 -4 l13 -14 z" fill="currentColor" />
         <path
           d="M70 228 A130 130 0 0 1 70 92"
           stroke="currentColor"
-          strokeWidth="6"
+          strokeWidth="7"
           strokeLinecap="round"
-          strokeDasharray="1.5 16"
+          strokeDasharray="1.5 17"
         />
-        <path d="M70 92 l15 4 l-12 13 z" fill="currentColor" />
+        <path d="M70 92 l16 4 l-13 14 z" fill="currentColor" />
       </svg>
     </div>
   );
@@ -385,177 +476,156 @@ function DirectionArrows({ direction }: { direction: 1 | -1 }) {
 
 /* ------------------------------------------------------------ UNO button --- */
 
-function UnoButton({ enabled, onClick }: { enabled: boolean; onClick: () => void }) {
+function UnoButton({
+  className = "",
+  enabled,
+  onClick,
+}: {
+  className?: string;
+  enabled: boolean;
+  onClick: () => void;
+}) {
   return (
-    <button
-      onClick={onClick}
-      disabled={!enabled}
-      title="Call UNO!"
-      className={`group relative grid place-items-center px-3 py-2 rounded-[22px] bg-uno-red border-[3px] border-uno-cream shadow-[0_5px_0_rgba(43,42,39,0.28)] transition disabled:opacity-30 disabled:grayscale disabled:shadow-none active:translate-y-[3px] active:shadow-none ${
-        enabled ? "hover:-translate-y-0.5 uno-wiggle" : ""
-      }`}
-    >
-      <Img
-        src="/game/uno-logo.png"
-        alt="Call UNO!"
-        width={84}
-        height={46}
-        rounded={false}
-        style={{ width: 72, height: "auto" }}
-        className="pointer-events-none drop-shadow-[0_2px_2px_rgba(43,42,39,0.35)] transition-transform group-hover:scale-110"
-        draggable={false}
-        unoptimized
-      />
-      {enabled && (
-        <>
-          <span className="absolute -top-1.5 -left-1.5 text-uno-yellow text-lg drop-shadow">✦</span>
-          <span className="absolute -bottom-1.5 -right-1.5 text-uno-yellow text-sm drop-shadow">✦</span>
-        </>
-      )}
-    </button>
+    <div className={`pointer-events-none z-20 ${className}`}>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={!enabled}
+        title="Call UNO!"
+        className={`pointer-events-auto group relative grid place-items-center px-8 py-3 rounded-[22px] bg-uno-red border-[3px] border-uno-cream shadow-[0_5px_0_rgba(43,42,39,0.28)] transition disabled:opacity-30 disabled:grayscale disabled:shadow-none active:translate-y-[3px] active:shadow-none ${
+          enabled ? "hover:-translate-y-0.5 uno-wiggle" : ""
+        }`}
+      >
+        <span className="font-display text-uno-cream text-[34px] leading-none tracking-wide drop-shadow-[0_2px_2px_rgba(43,42,39,0.35)]">
+          UNO!
+        </span>
+        {enabled && (
+          <svg
+            aria-hidden
+            className="absolute -top-5 -right-5 text-uno-yellow"
+            width="40"
+            height="40"
+            viewBox="0 0 40 40"
+            fill="none"
+          >
+            {[15, 45, 75].map((deg) => {
+              const a = (deg * Math.PI) / 180;
+              return (
+                <line
+                  key={deg}
+                  x1={20 + Math.cos(a) * 9}
+                  y1={20 - Math.sin(a) * 9}
+                  x2={20 + Math.cos(a) * 17}
+                  y2={20 - Math.sin(a) * 17}
+                  stroke="currentColor"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                />
+              );
+            })}
+          </svg>
+        )}
+      </button>
+    </div>
   );
 }
 
 /* ----------------------------------------------------------------- Hand --- */
+
+// Tiny deterministic per-card jitter so a held hand never looks mechanically
+// even. Keyed by index → stable across renders.
+const JITTER = [0.9, -1.4, 0.5, -0.7, 1.2, -0.4, 0.8, -1.1];
 
 /** Arced, overlapping hand that fans and lifts on hover. */
 function Hand({
   cards,
   isPlayable,
   isHighlighted,
+  isSelected,
   onPlay,
 }: {
   cards: Card[];
   isPlayable: (c: Card) => boolean;
   isHighlighted: (c: Card) => boolean;
+  isSelected: (c: Card) => boolean;
   onPlay: (c: Card) => void;
 }) {
   const [hover, setHover] = useState<number | null>(null);
-  const W = 92;
+  const W = 102;
   const n = cards.length;
 
   if (n === 0) {
-    return <div className="text-center text-uno-ink2 py-10">no cards</div>;
+    return <div className="flex justify-center items-end h-[128px] text-uno-ink2">no cards</div>;
   }
 
   const mid = (n - 1) / 2;
-  // Tighter overlap as the hand grows so it always fits the tray.
-  const overlap = -Math.min(W * 0.5, Math.max(W * 0.2, (n - 5) * 6 + W * 0.28));
+  // Tighten overlap as the hand grows so it always fits the tray.
+  const overlap = -Math.min(W * 0.52, Math.max(W * 0.3, (n - 6) * 7 + W * 0.34));
 
   return (
-    <div
-      className="flex justify-center items-end h-[176px]"
-      onMouseLeave={() => setHover(null)}
-    >
+    <div className="flex justify-center items-end h-[128px]" onMouseLeave={() => setHover(null)}>
       {cards.map((card, i) => {
         const canPlayIt = isPlayable(card);
+        const selected = isSelected(card);
         const d = i - mid;
-        // Base arc: rotate outward from center, dip the ends down slightly.
-        const baseRot = d * 3.2;
-        const baseY = Math.abs(d) * Math.abs(d) * 1.1 + (canPlayIt ? -10 : 0);
+        const jit = JITTER[i % JITTER.length];
+        const baseRot = d * 3.4 + jit; // wider fan + organic wobble
+        const baseY =
+          Math.abs(d) * Math.abs(d) * 1.15 + Math.abs(jit) + (canPlayIt ? -10 : 0);
 
         let rot = baseRot;
         let y = baseY;
         let scale = 1;
         let z = i;
+        let x = 0;
+        let lifted = false;
 
         if (hover === i) {
-          rot = 0;
+          rot = jit * 0.3; // settle almost upright
           y = -34;
-          scale = 1.22;
+          scale = 1.16;
           z = 100;
+          lifted = true;
         } else if (hover !== null) {
-          const away = Math.sign(i - hover) * 16;
-          rot = baseRot;
-          y = baseY + 6;
-          z = 50 - Math.abs(i - hover);
-          return (
-            <HandCard
-              key={card.uid}
-              card={card}
-              width={W}
-              overlap={i === 0 ? 0 : overlap}
-              rot={rot}
-              y={y}
-              x={away}
-              scale={scale}
-              z={z}
-              playable={canPlayIt}
-              highlight={isHighlighted(card)}
-              onEnter={() => setHover(i)}
-              onClick={() => onPlay(card)}
-            />
-          );
+          // Spread neighbors away from the raised card, nearer ones move more.
+          const dist = i - hover;
+          const push = Math.sign(dist) * Math.max(6, 22 - Math.abs(dist) * 5);
+          x = push;
+          rot = baseRot + Math.sign(dist) * 2;
+          y = baseY + 4;
+          z = 50 - Math.abs(dist);
+        }
+
+        // Selected cards (mid-stack) sit raised and ringed until played.
+        if (selected && hover !== i) {
+          y -= 30;
+          z = Math.max(z, 60);
+          lifted = true;
         }
 
         return (
-          <HandCard
+          <div
             key={card.uid}
-            card={card}
-            width={W}
-            overlap={i === 0 ? 0 : overlap}
-            rot={rot}
-            y={y}
-            x={0}
-            scale={scale}
-            z={z}
-            playable={canPlayIt}
-            highlight={isHighlighted(card)}
-            onEnter={() => setHover(i)}
-            onClick={() => onPlay(card)}
-          />
+            onMouseEnter={() => setHover(i)}
+            className={`relative ${lifted ? "card-shadow-hover" : "card-shadow"}`}
+            style={{
+              marginLeft: i === 0 ? 0 : overlap,
+              transform: `translate(${x}px, ${y}px) rotate(${rot}deg) scale(${scale})`,
+              transformOrigin: "bottom center",
+              zIndex: z,
+              transition: "transform 220ms cubic-bezier(0.22,1,0.36,1), margin 220ms ease",
+            }}
+          >
+            <CardFace
+              card={card}
+              width={W}
+              playable={canPlayIt}
+              highlight={isHighlighted(card) || selected}
+              onClick={() => onPlay(card)}
+            />
+          </div>
         );
       })}
-    </div>
-  );
-}
-
-function HandCard({
-  card,
-  width,
-  overlap,
-  rot,
-  y,
-  x,
-  scale,
-  z,
-  playable,
-  highlight,
-  onEnter,
-  onClick,
-}: {
-  card: Card;
-  width: number;
-  overlap: number;
-  rot: number;
-  y: number;
-  x: number;
-  scale: number;
-  z: number;
-  playable: boolean;
-  highlight: boolean;
-  onEnter: () => void;
-  onClick: () => void;
-}) {
-  return (
-    <div
-      onMouseEnter={onEnter}
-      style={{
-        marginLeft: overlap,
-        transform: `translate(${x}px, ${y}px) rotate(${rot}deg) scale(${scale})`,
-        transformOrigin: "bottom center",
-        zIndex: z,
-        transition: "transform 200ms cubic-bezier(0.22,1,0.36,1), margin 200ms ease",
-      }}
-      className="relative card-shadow"
-    >
-      <CardFace
-        card={card}
-        width={width}
-        playable={playable}
-        highlight={highlight}
-        onClick={onClick}
-      />
     </div>
   );
 }

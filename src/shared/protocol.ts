@@ -9,6 +9,7 @@ export const ruleConfigSchema = z.object({
   unoPenalty: z.number().int().min(1).max(10),
   stackDraw2OnDraw2: z.boolean(),
   stackDraw4OnDraw2Or4: z.boolean(),
+  stacking: z.boolean(),
   drawPenaltyBehavior: z.enum(["drawOneAndPass", "drawUntilPlayable"]),
   forcePlay: z.boolean(),
   dealSize: z.number().int().min(3).max(10),
@@ -35,6 +36,11 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("playCard"),
     uid: z.string(),
+    chosenColor: colorSchema.optional(),
+  }),
+  z.object({
+    type: z.literal("playCards"),
+    uids: z.array(z.string()).min(1).max(10),
     chosenColor: colorSchema.optional(),
   }),
   z.object({ type: z.literal("drawCard") }),

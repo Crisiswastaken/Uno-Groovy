@@ -9,6 +9,7 @@ import {
   getClientView,
   passAfterDraw,
   playCard,
+  playCards,
   removePlayer,
   RoomState,
   setConnected,
@@ -121,6 +122,10 @@ export default class UnoServer implements Party.Server {
         break;
       case "playCard":
         r = playCard(this.state, playerId, msg.uid, msg.chosenColor);
+        if (r.ok) this.onTurnAdvanced();
+        break;
+      case "playCards":
+        r = playCards(this.state, playerId, msg.uids, msg.chosenColor);
         if (r.ok) this.onTurnAdvanced();
         break;
       case "drawCard":

@@ -66,7 +66,9 @@ export function RoomClient({ code }: { code: string }) {
 
   return (
     <>
-      <RoomBackground />
+      {/* The groovy table art belongs to the play area only; the lobby brings
+          its own calmer backdrop. */}
+      {view.phase !== "lobby" && <RoomBackground />}
       {!connected && (
         <div className="fixed top-0 inset-x-0 z-50 bg-uno-red text-uno-cream text-center text-sm font-semibold py-1">
           reconnecting…
