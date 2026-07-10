@@ -1,0 +1,18 @@
+# Render Blueprint for the Custom UNO game server (the standalone Node
+# WebSocket backend in server/index.ts). Render reads this on "New +
+# Blueprint" and provisions the service automatically.
+#
+# The frontend (Next.js) is deployed separately on Vercel — see DEPLOYMENT.md.
+services:
+  - type: web
+    name: custom-uno-server
+    runtime: node
+    plan: free
+    # Install only production deps (skips partykit's workerd download, etc.).
+    buildCommand: npm ci --omit=dev
+    startCommand: npm run start:server
+    # Our server answers plain HTTP GETs with 200, so this doubles as a health check.
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

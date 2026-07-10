@@ -26,7 +26,7 @@ rejoin their exact seat. Play 2–4 players per room over a shareable code.
 |---|---|
 | UI + lobby | Next.js 16 (App Router) + React 19 + TypeScript |
 | Styling | Tailwind CSS v4 (CSS-first) |
-| Realtime game server | PartyKit (one stateful "party" per room) |
+| Realtime game server | Standalone Node WebSocket server (`server/`), reusing the shared engine |
 | Client view state | Zustand |
 | Validation | Zod (every inbound action) |
 | Tests | Vitest (pure engine) |
@@ -46,16 +46,17 @@ LAN or the internet** — are in **[SETUP.md](SETUP.md)**.
 
 | Doc | What's in it |
 |---|---|
-| **[SETUP.md](SETUP.md)** | Install, run locally, and host a game for friends (LAN / ngrok / cloudflared). |
-| **[DEPLOYMENT.md](DEPLOYMENT.md)** | Deploy to production (PartyKit + Vercel), env-var reference, verification checklist. |
+| **[SETUP.md](SETUP.md)** | Install, run locally, and host a game for friends (deploy / LAN / tunnel). |
+| **[DEPLOYMENT.md](DEPLOYMENT.md)** | Deploy to production (game server on Render + web app on Vercel), env-var reference, verification checklist. |
 | **[CONTRIBUTING.md](CONTRIBUTING.md)** | Architecture, project layout, and PR guidelines. |
 | **[.env.example](.env.example)** | The environment variables and what they do. |
 
 ## Project structure
 
 ```
-party/server.ts        PartyKit room server: identity, validation, broadcast, auto-pass
-src/engine/            Pure, unit-tested game engine (types, deck, rules, engine)
+server/index.ts        Game server (deployed): Node ws server — identity, validation, broadcast, auto-pass
+party/server.ts        Legacy PartyKit variant of the same server (unused; kept for reference)
+src/engine/            Pure, unit-tested game engine (types, deck, rules, engine) — shared by both
 src/shared/protocol.ts Zod message schemas + client/server message types
 src/store/ src/hooks/  Zustand view store + PartySocket connection
 src/lib/               identity, avatars, asset preloading, env flags
@@ -70,10 +71,10 @@ public/                Served card art, fonts, avatars, backgrounds
 |---|---|
 | `npm run dev` | Web app + game server together (webpack). |
 | `npm run dev:lan` | Same, but web app bound to `0.0.0.0` for LAN play. |
-| `npm run dev:next` / `dev:party` | Run either process alone. |
+| `npm run dev:next` / `dev:server` | Run either process alone. |
+| `npm run start:server` | Run the game server (production start command). |
 | `npm test` | Engine unit tests (Vitest). |
-| `npm run build` / `start` | Production build / serve. |
-| `npm run deploy:party` | Deploy the game server to PartyKit. |
+| `npm run build` / `start` | Production build / serve of the web app. |
 | `npm run clean` | Delete the `.next` cache. |
 
 ## House rules (set by the host at room creation)

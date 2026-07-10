@@ -15,8 +15,9 @@ set up, how the project is organized, and what we expect in a pull request.
 ## Project layout
 
 ```
-party/server.ts        PartyKit room server: identity, validation, broadcast, 30s auto-pass
-src/engine/            Pure, unit-tested game engine (no networking, no React)
+server/index.ts        Game server (deployed): standalone Node ws server — identity, validation, broadcast, 30s auto-pass
+party/server.ts        Legacy PartyKit variant of the same server (unused; kept for reference)
+src/engine/            Pure, unit-tested game engine (no networking, no React) — shared by both servers
   types.ts  deck.ts  rules.ts  engine.ts  engine.test.ts
 src/shared/protocol.ts Zod message schemas + client/server message types
 src/store/gameStore.ts Zustand store (personalized view + toasts)
@@ -29,12 +30,14 @@ public/                Served assets (card art, fonts, avatars, backgrounds)
 
 ### Architecture in one paragraph
 
-The game is **server-authoritative**: `party/server.ts` owns the full
+The game is **server-authoritative**: `server/index.ts` owns the full
 `RoomState`, applies every action through the pure functions in `src/engine/`,
 and broadcasts a **personalized, public-safe** `ClientView` to each player (your
 hand is yours; others only send counts). The client is a thin renderer of that
 view plus the action messages defined in `src/shared/protocol.ts`. Keep game
-rules in the engine, not in components.
+rules in the engine, not in components — both `server/index.ts` (the deployed
+Node server) and `party/server.ts` (the legacy PartyKit variant) are thin
+transports over the same engine, so a rule change is made once and both get it.
 
 ## Making changes
 
