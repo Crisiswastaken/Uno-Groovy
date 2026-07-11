@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Splash } from "../components/Splash";
 import { ClickSpark } from "../components/ClickSpark";
+import { CursorTrail } from "../components/CursorTrail";
 import { MobileGate } from "../components/MobileGate";
 import { MuteToggle } from "../components/MuteToggle";
 import { SensoryUIProvider } from "@/lib/provider";
@@ -38,6 +39,7 @@ export default function RootLayout({
         >
           <Splash>{children}</Splash>
           <ClickSpark />
+          <CursorTrail />
           <MobileGate />
           <MuteToggle />
         </SensoryUIProvider>
