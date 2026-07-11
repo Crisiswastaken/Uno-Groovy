@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PartySocket from "partysocket";
 import { useGameStore } from "../store/gameStore";
+import { useSensoryUI } from "../lib/provider";
 import type { RuleConfig } from "../engine/types";
 import type { ClientMessage, ServerMessage } from "../shared/protocol";
 import { getName, getOrCreatePlayerId, takeCreate } from "./../lib/identity";
@@ -22,6 +23,11 @@ type Intent =
 export function useRoom(code: string) {
   const socketRef = useRef<PartySocket | null>(null);
   const { setView, setConnected, pushToast } = useGameStore();
+  // Keep the latest playSound in a ref so the socket effect (created once per
+  // room) can sound rejected actions without re-subscribing.
+  const { playSound } = useSensoryUI();
+  const playSoundRef = useRef(playSound);
+  playSoundRef.current = playSound;
   const [needsName, setNeedsName] = useState(false);
   const intentRef = useRef<Intent>({ kind: "waiting" });
   const playerIdRef = useRef<string>("");
@@ -114,6 +120,7 @@ export function useRoom(code: string) {
           if (msg.reason === "No seat to rejoin") {
             attemptJoin(); // fall back to a fresh join
           } else {
+            void playSoundRef.current("notification.error");
             pushToast(msg.reason, "error");
           }
           break;

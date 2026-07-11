@@ -31,6 +31,10 @@ export function CardFace({
 }) {
   const w = width ?? WIDTHS[size];
   const interactive = !!onClick && !!playable;
+  // Match the card artwork's own corner radius (~10% of width, per ui/Card) so
+  // the selection outline is a rounded rect that hugs the card, not a
+  // square-cornered ring.
+  const radius = Math.max(4, Math.round(w * 0.1));
   return (
     <button
       type="button"
@@ -39,7 +43,7 @@ export function CardFace({
       style={{ width: w }}
       className={`card-face relative shrink-0 transition-transform duration-150 ${
         interactive ? "hover:-translate-y-3 cursor-pointer" : "cursor-default"
-      } ${highlight ? "ring-4 ring-uno-ink -translate-y-2" : ""}`}
+      } ${highlight ? "-translate-y-2" : ""}`}
     >
       <Card
         src={cardAsset(card)}
@@ -51,6 +55,13 @@ export function CardFace({
         draggable={false}
         unoptimized
       />
+      {highlight && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute border-[3px] border-uno-ink"
+          style={{ inset: -3, borderRadius: radius + 3 }}
+        />
+      )}
     </button>
   );
 }

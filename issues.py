@@ -1,0 +1,13 @@
+"""
+The following issues were found in the current implementation of the UNO game.
+1. Initially when the loading animation is done playing, and the site zooms in, for a second the vertical and horizontal scrollbars are visible. This is not ideal, remove them.
+2. On starting the game, there is a bug, the user gets redirected to appropriate /room/roomcode page, but the page is not rendered and it just shows a blank page. On reloading the page, the page is rendered correctly. Debug this issue properly, find the root cause and fix it.
+3. The animation while playing a card is very abrupt, the card suddenly diappers from the users deck and appears on the table. Same for when a user is drawing cards. This is not ideal, make it smooth and natural. 
+4. When a user plays plus 2 or plus 4, the opponent isnt directly handed the cards, they have to manually click on the card stack to get the cards. This is not ideal, make it so that the opponent gets the cards automatically. Not abruptly, smooth animation. 
+5. To fix issues 3 and 4, we need to modify the animation code. The current animation code is not efficient and is not smooth. To fix this, implement a clean reusable animation component for picking up and dropping cards. 
+6. "Pick a Color" component is way too dull, update the Pick a color text to the Primary one, and turn the 4 colors to a circle with 4 colors, when hovering on a part of the circle, that part should slightly scale up. Also when the Wild card is placed, the other players should get a pop up animation of the color that was chosen. Same for the Wild Draw 4 card.
+7. The Direction arrow on the center of the table is not great, its not fully visible and getting hidden under the card stack, increase its radius and update its color to match the color of the current active color, and get rid of the color box below the cards thats currently being used to display the current active color, its awful. 
+8. Theres an issue with the current uno logic, the uno button activates even when a player has 2 cards left in their deck. This is not ideal, make it so that the uno button only activates when a player has 1 card left in their deck.
+9. The primary font system doesnt have a dedicatd character for the exclamation mark, dont use it. Especially in the Uno button and the Round over component.
+10. When Stacking multiple cards is allowed, and user is selecting multiple cards, the black border around the selected cards doesnt have a proper border radius matching the card radius, make it so that the border radius is the same as the card radius. 
+"""

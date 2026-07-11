@@ -2,6 +2,7 @@
 
 import type { ClientView } from "../engine/types";
 import type { ClientMessage } from "../shared/protocol";
+import { usePlaySound } from "../hooks/use-play-sound";
 
 export function RoundEnd({
   view,
@@ -10,6 +11,7 @@ export function RoundEnd({
   view: ClientView;
   send: (m: ClientMessage) => void;
 }) {
+  const nextSfx = usePlaySound({ sound: "interaction.confirm" });
   const isHost = view.hostPlayerId === view.youPlayerId;
   const isMatchEnd = view.phase === "match_end";
   const winnerId = isMatchEnd ? view.matchWinnerId : view.roundWinnerId;
@@ -27,7 +29,7 @@ export function RoundEnd({
           {isMatchEnd ? "Match Over" : "Round Over"}
         </div>
         <h1 className="font-display text-5xl mb-6">
-          {winner ? `${winner.displayName} wins!` : "Round complete"}
+          {winner ? `${winner.displayName} wins` : "Round complete"}
         </h1>
 
         {showScores && (
@@ -55,14 +57,17 @@ export function RoundEnd({
 
         {isHost ? (
           <button
-            onClick={() => send({ type: "startNextRound" })}
+            onClick={() => {
+              nextSfx.play();
+              send({ type: "startNextRound" });
+            }}
             className="w-full bg-uno-green text-uno-cream font-extrabold uppercase tracking-wide py-3.5 rounded-card border-2 border-uno-ink/15 shadow-[0_5px_0_rgba(43,42,39,0.25)] hover:-translate-y-0.5 hover:brightness-[1.04] hover:shadow-[0_7px_0_rgba(43,42,39,0.25)] active:translate-y-[3px] active:shadow-none transition"
           >
             {isMatchEnd ? "New Match" : "Next Round"}
           </button>
         ) : (
           <div className="text-uno-ink1 py-3">
-            Waiting for host to continue…
+            Waiting for host to continue
           </div>
         )}
       </div>

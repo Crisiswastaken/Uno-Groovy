@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Card, ClientView, Color } from "../engine/types";
 import { canPlay, isWild } from "../engine/rules";
 import type { ClientMessage } from "../shared/protocol";
 import { avatarFor } from "../lib/avatars";
+import { usePlaySound } from "../hooks/use-play-sound";
 import { CardBack, CardFace, swatch } from "./Card";
 import { ColorPicker } from "./ColorPicker";
 import { OpponentSeat } from "./OpponentSeat";
 import { Card as Img } from "./ui/Card";
+import { centerOf, FlightLayer, useFlights } from "./cardFlight";
 
 /* Live game table, styled to match the /demo redesign (GameDemo): a focal
    discard on the star, a tucked draw pile, translucent opponent seats, and a
@@ -35,6 +37,15 @@ export function GameTable({
   const me = view.players.find((p) => p.playerId === view.youPlayerId);
   const mySeat = me?.seat ?? -1;
   const isMyTurn = view.currentSeat === mySeat && view.phase === "in_round";
+
+  // Sound cues for the local player's own actions. (Opponent plays, turn
+  // changes and wins are handled centrally by useGameSounds via view-diffing.)
+  const playCardSfx = usePlaySound({ sound: "interaction.confirm" });
+  const drawSfx = usePlaySound({ sound: "interaction.tap" });
+  const passSfx = usePlaySound({ sound: "interaction.subtle" });
+  const selectSfx = usePlaySound({ sound: "interaction.subtle" });
+  const unoSfx = usePlaySound({ sound: "notification.success" });
+  const catchSfx = usePlaySound({ sound: "notification.warning" });
 
   const opponents = useMemo(() => {
     const n = view.players.length;
@@ -92,12 +103,93 @@ export function GameTable({
   // Cards awaiting a color pick (a wild being played), as uids; null when none.
   const [pendingWild, setPendingWild] = useState<string[] | null>(null);
 
+  // Announce, to everyone but the player who chose it, the color picked when a
+  // wild / wild-draw-4 lands on the pile.
+  const [wildPopup, setWildPopup] = useState<{ color: Color; key: number } | null>(null);
+  const myWildUid = useRef<string | null>(null); // a wild I just played — skip its popup
+  const lastWildUid = useRef<string | null>(null);
+  useEffect(() => {
+    const top = view.discardTop;
+    if (!top || !isWild(top.value) || !view.activeColor) return;
+    if (top.uid === lastWildUid.current) return; // already announced this one
+    lastWildUid.current = top.uid;
+    if (top.uid === myWildUid.current) return; // I'm the one who chose it
+    setWildPopup({ color: view.activeColor, key: Date.now() });
+    const t = setTimeout(() => setWildPopup(null), 1700);
+    return () => clearTimeout(t);
+  }, [view.discardTop, view.activeColor]);
+
+  // Card-flight overlay (hand -> discard on a play, draw pile -> hand on a draw).
+  const { flights, fly } = useFlights();
+  // A uid I just launched toward the discard; its landing flight replaces the
+  // pile's own drop-in so the card reads as one continuous motion.
+  const flewToDiscard = useRef<string | null>(null);
+
   const sendPlay = (uids: string[], color?: Color) => {
     if (uids.length === 0) return;
+    playCardSfx.play(); // a satisfying "commit" the moment a card leaves the hand
+
+    // Launch each played card from its slot in the hand onto the discard, before
+    // the authoritative update removes it. Capture rects up front (the cards are
+    // still mounted now).
+    const to = centerOf("[data-discard]");
+    const froms = uids.map((u) => centerOf(`[data-hand-uid="${u}"]`));
+    let launched = false;
+    uids.forEach((uid, i) => {
+      const from = froms[i];
+      const c = handByUid.get(uid);
+      if (from && to && c) {
+        fly({ card: c, from, to, toRot: -6, width: 150, duration: 340, lift: 44 });
+        launched = true;
+      }
+    });
+    // Only hand the landing over to the flight if one actually took off; else
+    // let the pile keep its own drop-in so the card is never truly abrupt.
+    if (launched) flewToDiscard.current = uids[uids.length - 1];
+
     if (uids.length === 1) send({ type: "playCard", uid: uids[0], chosenColor: color });
     else send({ type: "playCards", uids, chosenColor: color });
     setSelected([]);
   };
+
+  /** Fly a face-down card off the draw pile into the hand, then draw for real. */
+  const flyDrawToHand = (count = 1) => {
+    const from = centerOf("[data-draw]");
+    if (!from) return;
+    const to =
+      centerOf("[data-hand-target]") ?? { x: from.x, y: window.innerHeight - 90 };
+    const n = Math.min(Math.max(1, count), 6);
+    for (let i = 0; i < n; i++) {
+      window.setTimeout(
+        () => fly({ card: null, from, to, width: 100, duration: 360, lift: 28 }),
+        i * 90,
+      );
+    }
+  };
+
+  const handleDraw = () => {
+    drawSfx.play();
+    flyDrawToHand(1);
+    send({ type: "drawCard" });
+  };
+
+  // Auto-resolve a draw penalty: when it's my turn, a +2/+4 stack is pending,
+  // and I hold nothing that can continue it, the cards are handed to me
+  // automatically (with a flight) instead of forcing a manual click on the
+  // pile. If I *can* stack, leave the choice to me.
+  const autoDrawGuard = useRef<string>("");
+  useEffect(() => {
+    if (!isMyTurn || view.pendingDraw <= 0 || view.pendingPass) return;
+    const canRespond = myHand.some((c) => canOpenWith(c));
+    if (canRespond) return;
+    const key = `${view.discardTop?.uid ?? ""}:${view.pendingDraw}`;
+    if (autoDrawGuard.current === key) return;
+    autoDrawGuard.current = key;
+    flyDrawToHand(view.pendingDraw);
+    const t = window.setTimeout(() => send({ type: "drawCard" }), 400);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMyTurn, view.pendingDraw, view.pendingPass, view.discardTop?.uid]);
 
   /** Commit a set of cards; wilds route through the color picker first. */
   const commit = (uids: string[]) => {
@@ -124,7 +216,10 @@ export function GameTable({
       if (!canOpenWith(card)) return;
       const sameRank = myHand.filter((c) => c.value === card.value);
       if (sameRank.length <= 1) commit([card.uid]); // nothing to stack — just play
-      else setSelected([card.uid]); // enter selection
+      else {
+        selectSfx.play();
+        setSelected([card.uid]); // enter selection
+      }
       return;
     }
 
@@ -133,18 +228,26 @@ export function GameTable({
       if (!canOpenWith(card)) return;
       const sameRank = myHand.filter((c) => c.value === card.value);
       if (sameRank.length <= 1) commit([card.uid]);
-      else setSelected([card.uid]);
+      else {
+        selectSfx.play();
+        setSelected([card.uid]);
+      }
       return;
     }
 
     // Same rank — toggle in/out of the stack.
+    selectSfx.play();
     setSelected((sel) =>
       sel.includes(card.uid) ? sel.filter((u) => u !== card.uid) : [...sel, card.uid],
     );
   };
 
   const confirmWild = (color: Color) => {
-    if (pendingWild) sendPlay(pendingWild, color);
+    if (pendingWild) {
+      // Remember the wild I'm playing so its own color popup is suppressed for me.
+      myWildUid.current = pendingWild[pendingWild.length - 1];
+      sendPlay(pendingWild, color);
+    }
     setPendingWild(null);
   };
 
@@ -155,7 +258,8 @@ export function GameTable({
 
   const canDraw = isMyTurn && !view.pendingPass;
   const canPass = isMyTurn && !!view.pendingPass && !mustPlay;
-  const canCallUno = myHand.length <= 2 && !me?.hasCalledUno;
+  // UNO is called on your last-but-one card — only ever with a single card left.
+  const canCallUno = myHand.length === 1 && !me?.hasCalledUno;
 
   const renderSeat = (p: (typeof opponents)[number], o: Orientation) => (
     <OpponentSeat
@@ -163,7 +267,10 @@ export function GameTable({
       player={p}
       orientation={o}
       isCurrent={view.currentSeat === p.seat}
-      onCatch={() => send({ type: "catchMissedUno", targetPlayerId: p.playerId })}
+      onCatch={() => {
+        catchSfx.play();
+        send({ type: "catchMissedUno", targetPlayerId: p.playerId });
+      }}
     />
   );
 
@@ -199,18 +306,22 @@ export function GameTable({
             />
           )}
 
-          <DirectionArrows direction={view.direction} />
+          <DirectionArrows direction={view.direction} activeColor={view.activeColor} />
 
           <div className="absolute right-full top-1/2 -translate-y-1/2 mr-12">
             <DrawPile
               count={view.drawPileCount}
               pendingDraw={view.pendingDraw}
               canDraw={canDraw}
-              onDraw={() => send({ type: "drawCard" })}
+              onDraw={handleDraw}
             />
           </div>
 
-          <DiscardPile top={view.discardTop} activeColor={view.activeColor} />
+          <DiscardPile
+            top={view.discardTop}
+            activeColor={view.activeColor}
+            drop={view.discardTop?.uid !== flewToDiscard.current}
+          />
         </div>
       </div>
 
@@ -227,7 +338,7 @@ export function GameTable({
             </div>
 
             {/* Hand */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0" data-hand-target>
               <Hand
                 cards={myHand}
                 isPlayable={cardClickable}
@@ -258,7 +369,10 @@ export function GameTable({
                   </>
                 ) : (
                   <button
-                    onClick={() => send({ type: "passAfterDraw" })}
+                    onClick={() => {
+                      passSfx.play();
+                      send({ type: "passAfterDraw" });
+                    }}
                     className="bg-uno-cream text-uno-ink font-extrabold text-sm uppercase tracking-wide px-3 py-2.5 rounded-[16px] border-2 border-uno-ink/15 shadow-[0_4px_0_rgba(43,42,39,0.22)] hover:-translate-y-0.5 hover:bg-uno-white2 active:translate-y-[2px] active:shadow-none transition"
                   >
                     Pass
@@ -274,13 +388,46 @@ export function GameTable({
       <UnoButton
         className="absolute bottom-8 right-10"
         enabled={canCallUno}
-        onClick={() => send({ type: "callUno" })}
+        onClick={() => {
+          unoSfx.play();
+          send({ type: "callUno" });
+        }}
       />
 
       {pendingWild && (
         <ColorPicker onPick={confirmWild} onCancel={() => setPendingWild(null)} />
       )}
+
+      {wildPopup && <WildColorPopup key={wildPopup.key} color={wildPopup.color} />}
+
+      <FlightLayer flights={flights} />
     </main>
+  );
+}
+
+/* ------------------------------------------------------- Wild color popup --- */
+
+/** A brief centered flourish shown to everyone else when a wild sets the color. */
+function WildColorPopup({ color }: { color: Color }) {
+  const label = color[0].toUpperCase() + color.slice(1);
+  return (
+    <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center">
+      <div className="wild-pop flex flex-col items-center gap-4">
+        <span
+          className="grid place-items-center w-32 h-32 rounded-full border-[6px] border-uno-cream shadow-[0_16px_50px_rgba(43,42,39,0.45)]"
+          style={{ background: swatch[color] }}
+        >
+          <span
+            aria-hidden
+            className="w-16 h-16 rounded-full"
+            style={{ background: "rgba(241,231,220,0.35)" }}
+          />
+        </span>
+        <span className="font-display text-4xl text-uno-cream tracking-wide drop-shadow-[0_3px_8px_rgba(43,42,39,0.6)]">
+          {label}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -328,6 +475,7 @@ function DrawPile({
       type="button"
       onClick={() => canDraw && onDraw()}
       disabled={!canDraw}
+      data-draw
       style={{ width: W, height: Math.round((W * 3) / 2) + 10 }}
       className={`group relative shrink-0 transition-transform duration-200 ${
         canDraw ? "cursor-pointer hover:-translate-y-1" : "cursor-default"
@@ -378,14 +526,17 @@ const GHOSTS: { card: Card; rot: number; x: number; y: number }[] = [
 function DiscardPile({
   top,
   activeColor,
+  drop = true,
 }: {
   top: Card | null;
   activeColor: Color | null;
+  /** Play the drop-in animation. Off when a hand flight already animated it in. */
+  drop?: boolean;
 }) {
   const W = 150; // the board's primary focal point
   const h = Math.round((W * 3) / 2);
   return (
-    <div className="relative shrink-0" style={{ width: W + 40, height: h + 30 }}>
+    <div data-discard className="relative shrink-0" style={{ width: W + 40, height: h + 30 }}>
       {/* Active-color ring bloom hugging the top card. */}
       {activeColor && (
         <span
@@ -415,7 +566,7 @@ function DiscardPile({
       {top && (
         <div
           key={top.uid}
-          className="absolute left-1/2 top-1/2 card-shadow-lg animate-card-drop"
+          className={`absolute left-1/2 top-1/2 card-shadow-lg ${drop ? "animate-card-drop" : ""}`}
           style={
             {
               marginLeft: -W / 2,
@@ -426,13 +577,6 @@ function DiscardPile({
           }
         >
           <CardFace card={top} width={W} />
-          {activeColor && isWild(top.value) && (
-            <span
-              className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full border-[3px] border-uno-cream shadow"
-              style={{ background: swatch[activeColor] }}
-              title={`active color: ${activeColor}`}
-            />
-          )}
         </div>
       )}
     </div>
@@ -441,14 +585,24 @@ function DiscardPile({
 
 /* -------------------------------------------------------- Direction arcs --- */
 
-function DirectionArrows({ direction }: { direction: 1 | -1 }) {
+function DirectionArrows({
+  direction,
+  activeColor,
+}: {
+  direction: 1 | -1;
+  activeColor: Color | null;
+}) {
+  // Sit well outside the discard (a larger radius) and take on the current
+  // active color, so the flow of play reads at a glance without a separate
+  // color chip. Falls back to a neutral ink before the first card lands.
   return (
     <div
       aria-hidden
-      className="absolute left-1/2 top-1/2 pointer-events-none text-uno-ink1/45 arrow-drift"
+      className="absolute left-1/2 top-1/2 pointer-events-none arrow-drift"
       style={{
-        width: 360,
-        height: 360,
+        width: 480,
+        height: 480,
+        color: activeColor ? swatch[activeColor] : "var(--color-uno-ink1)",
         transform: `translate(-50%,-50%) scaleX(${direction === -1 ? -1 : 1})`,
       }}
     >
@@ -497,7 +651,7 @@ function UnoButton({
         }`}
       >
         <span className="font-display text-uno-cream text-[34px] leading-none tracking-wide drop-shadow-[0_2px_2px_rgba(43,42,39,0.35)]">
-          UNO!
+          UNO
         </span>
         {enabled && (
           <svg
@@ -551,6 +705,18 @@ function Hand({
   onPlay: (c: Card) => void;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  // A very quiet tick when the pointer lifts a *playable* card, throttled so a
+  // sweep across the fan never machine-guns.
+  const hoverSfx = usePlaySound({ sound: "interaction.subtle", volume: 0.5 });
+  const lastHoverTs = useRef(0);
+  const onHoverCard = (i: number, playable: boolean) => {
+    setHover(i);
+    if (!playable) return;
+    const now = Date.now();
+    if (now - lastHoverTs.current < 80) return;
+    lastHoverTs.current = now;
+    hoverSfx.play();
+  };
   const W = 102;
   const n = cards.length;
 
@@ -606,7 +772,8 @@ function Hand({
         return (
           <div
             key={card.uid}
-            onMouseEnter={() => setHover(i)}
+            data-hand-uid={card.uid}
+            onMouseEnter={() => onHoverCard(i, canPlayIt)}
             className={`relative ${lifted ? "card-shadow-hover" : "card-shadow"}`}
             style={{
               marginLeft: i === 0 ? 0 : overlap,

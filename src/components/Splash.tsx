@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { preloadAllAssets } from "../lib/preload";
 
 /** Session flag: once set, the intro is skipped for the rest of the session. */
@@ -24,6 +25,7 @@ export function Splash({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<Status>("deciding");
   const [videoEnded, setVideoEnded] = useState(false);
   const [assetsReady, setAssetsReady] = useState(false);
+  const pathname = usePathname();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const decided = useRef(false);
@@ -32,6 +34,16 @@ export function Splash({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (decided.current) return;
     decided.current = true;
+
+    // The intro is a landing-page experience. If the first paint of the session
+    // is any other route — the post-create redirect to /room/[code], or an
+    // invite deep-link — DON'T gate it behind the opaque splash, or the real
+    // page sits hidden until the video ends (it looked like a blank screen that
+    // only a reload fixed). Reveal those routes immediately.
+    if (pathname !== "/") {
+      setStatus("done");
+      return;
+    }
 
     let seen = false;
     try {
@@ -47,7 +59,20 @@ export function Splash({ children }: { children: React.ReactNode }) {
 
     setStatus("playing");
     preloadAllAssets().finally(() => setAssetsReady(true));
-  }, []);
+  }, [pathname]);
+
+  // While the intro zoom-blurs away, both the exiting overlay (scaling to 1.6)
+  // and the counter-zooming app (starting at scale 1.05) briefly overflow the
+  // viewport, flashing scrollbars. Clip the document for the duration.
+  useEffect(() => {
+    if (status !== "exiting") return;
+    const el = document.documentElement;
+    const prev = el.style.overflow;
+    el.style.overflow = "hidden";
+    return () => {
+      el.style.overflow = prev;
+    };
+  }, [status]);
 
   // Once the video is mounted (status "playing"), nudge autoplay and arm the
   // safety fallback. Autoplay blocked or a load error counts as "ended".

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ClientView } from "../engine/types";
 import type { ClientMessage } from "../shared/protocol";
+import { usePlaySound } from "../hooks/use-play-sound";
 import { Card as Img } from "./ui/Card";
 
 export function Lobby({
@@ -16,6 +17,9 @@ export function Lobby({
   const isHost = view.hostPlayerId === view.youPlayerId;
   const canStart = view.players.length >= 2;
 
+  const copySfx = usePlaySound({ sound: "interaction.confirm" });
+  const startSfx = usePlaySound({ sound: "interaction.confirm" });
+
   const copy = async () => {
     const link =
       typeof window !== "undefined"
@@ -23,6 +27,7 @@ export function Lobby({
         : view.roomCode;
     try {
       await navigator.clipboard.writeText(link);
+      copySfx.play();
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -47,9 +52,6 @@ export function Lobby({
       {/* A frosted sheet lifts the lobby cleanly off the busy background. */}
       <div className="w-full max-w-md bg-uno-cream/80 backdrop-blur-2xl rounded-[28px] border-2 border-white/50 shadow-[0_20px_60px_rgba(43,42,39,0.25)] p-6">
         <h1 className="font-display text-5xl mb-1">Lobby</h1>
-        <p className="text-uno-ink1 text-sm mb-6">
-          Waiting for players — host starts when ready (2–4).
-        </p>
 
         <div className="bg-uno-white1 border-2 border-uno-ink/10 rounded-card p-5 mb-6 text-center">
           <div className="text-xs uppercase tracking-widest font-semibold text-uno-ink2">
@@ -97,7 +99,10 @@ export function Lobby({
 
         {isHost ? (
           <button
-            onClick={() => send({ type: "startGame" })}
+            onClick={() => {
+              startSfx.play();
+              send({ type: "startGame" });
+            }}
             disabled={!canStart}
             className="w-full bg-uno-green text-uno-cream font-extrabold uppercase tracking-wide py-3.5 rounded-card border-2 border-uno-ink/15 shadow-[0_5px_0_rgba(43,42,39,0.25)] hover:-translate-y-0.5 hover:brightness-[1.04] hover:shadow-[0_7px_0_rgba(43,42,39,0.25)] active:translate-y-[3px] active:shadow-none disabled:opacity-40 disabled:translate-y-0 disabled:shadow-none disabled:hover:brightness-100 transition"
           >
@@ -105,7 +110,7 @@ export function Lobby({
           </button>
         ) : (
           <div className="text-center text-uno-ink1 py-3">
-            Waiting for host to start…
+            Waiting for host to start
           </div>
         )}
       </div>

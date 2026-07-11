@@ -1,6 +1,7 @@
 "use client";
 
 import { useRoom } from "../hooks/useRoom";
+import { useGameSounds } from "../hooks/useGameSounds";
 import { Card } from "./ui/Card";
 import { Spinner } from "./ui/Spinner";
 import { setName } from "../lib/identity";
@@ -35,6 +36,11 @@ function RoomBackground() {
 export function RoomClient({ code }: { code: string }) {
   const { send, needsName, submitName } = useRoom(code);
   const { view, connected } = useGameStore();
+
+  // Derive playful sound cues (opponent plays, specials, your turn, wins) by
+  // diffing successive snapshots. Called unconditionally before any early
+  // return so hook order stays stable; no-ops until a view arrives.
+  useGameSounds(view);
 
   if (needsName) {
     return (

@@ -27,7 +27,7 @@ function Avatar({
     <div className="relative">
       <div
         style={{ width: size, height: size }}
-        className={`shrink-0 rounded-[18px] card-shadow ${glow ? "turn-glow" : ""}`}
+        className={`shrink-0 rounded-[16px] card-shadow ${glow ? "turn-glow" : ""}`}
       >
         <Img
           src={avatarFor(player.seat)}
@@ -121,7 +121,7 @@ export function OpponentSeat({
       onClick={onCatch}
       className="text-[11px] bg-uno-red text-uno-cream font-bold px-2.5 py-1 rounded-full border-2 border-uno-cream shadow-[0_2px_4px_rgba(43,42,39,0.3)] animate-pulse hover:scale-105 transition-transform"
     >
-      Catch! no UNO
+      Catch!
     </button>
   );
 

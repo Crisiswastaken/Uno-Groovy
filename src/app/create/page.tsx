@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { DEFAULT_CONFIG, RuleConfig } from "../../engine/types";
 import { randomRoomCode, stashCreate } from "../../lib/identity";
+import { usePlaySound } from "../../hooks/use-play-sound";
 
 export default function CreatePage() {
   const router = useRouter();
@@ -12,7 +13,11 @@ export default function CreatePage() {
   const set = <K extends keyof RuleConfig>(k: K, v: RuleConfig[K]) =>
     setConfig((c) => ({ ...c, [k]: v }));
 
+  const createSfx = usePlaySound({ sound: "interaction.confirm" });
+  const backSfx = usePlaySound({ sound: "interaction.tap" });
+
   const create = () => {
+    createSfx.play();
     const code = randomRoomCode();
     // Only the rules travel with the room; the name is collected once, on the
     // room screen, for host and guests alike.
@@ -24,9 +29,6 @@ export default function CreatePage() {
     <main className="min-h-screen flex flex-col items-center py-12 px-4">
       <div className="w-full max-w-2xl">
         <h1 className="font-display text-5xl mb-2">Create Room</h1>
-        <p className="text-uno-ink1 text-sm mb-8">
-          Set the house rules — you&apos;ll pick your name when the room opens.
-        </p>
 
         <h2 className="text-lg font-bold mb-4">House Rules</h2>
 
@@ -127,7 +129,10 @@ export default function CreatePage() {
           Create &amp; Open Lobby
         </button>
         <button
-          onClick={() => router.push("/")}
+          onClick={() => {
+            backSfx.play();
+            router.push("/");
+          }}
           className="group w-full mt-3 flex items-center justify-center gap-1.5 text-uno-ink1 hover:text-uno-ink text-sm font-semibold py-2 transition-colors"
         >
           <ArrowLeft className="transition-transform group-hover:-translate-x-0.5" />
@@ -176,11 +181,15 @@ function ToggleCard({
   value: boolean;
   onChange: (v: boolean) => void;
 }) {
+  const toggleSfx = usePlaySound({ sound: "interaction.toggle" });
   return (
     <SettingCard className="flex items-center justify-between gap-3">
       <Label label={label} hint={hint} />
       <button
-        onClick={() => onChange(!value)}
+        onClick={() => {
+          toggleSfx.play();
+          onChange(!value);
+        }}
         role="switch"
         aria-checked={value}
         aria-label={label}
@@ -241,9 +250,13 @@ function Stepper({
   onClick: () => void;
   aria: string;
 }) {
+  const stepSfx = usePlaySound({ sound: "interaction.subtle" });
   return (
     <button
-      onClick={onClick}
+      onClick={() => {
+        stepSfx.play();
+        onClick();
+      }}
       aria-label={aria}
       className="grid place-items-center w-8 h-8 rounded-[12px] bg-uno-cream border-2 border-uno-ink/15 text-uno-ink hover:bg-uno-white2 hover:border-uno-ink/30 active:scale-90 transition"
     >
@@ -289,6 +302,10 @@ function Dropdown({
   const ref = useRef<HTMLDivElement>(null);
   const current = options.find(([v]) => v === value)?.[1] ?? "";
 
+  const openSfx = usePlaySound({ sound: "overlay.open" });
+  const closeSfx = usePlaySound({ sound: "overlay.close" });
+  const optionSfx = usePlaySound({ sound: "interaction.tap" });
+
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
@@ -307,7 +324,12 @@ function Dropdown({
     <div ref={ref} className="relative" style={{ zIndex: open ? 30 : undefined }}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() =>
+          setOpen((o) => {
+            (o ? closeSfx : openSfx).play();
+            return !o;
+          })
+        }
         aria-haspopup="listbox"
         aria-expanded={open}
         className={`flex w-full items-center justify-between gap-2 bg-uno-cream border-2 rounded-[14px] pl-3.5 pr-3 py-2.5 font-semibold text-uno-ink cursor-pointer transition ${
@@ -332,6 +354,7 @@ function Dropdown({
                   role="option"
                   aria-selected={selected}
                   onClick={() => {
+                    optionSfx.play();
                     onChange(v);
                     setOpen(false);
                   }}
