@@ -24,14 +24,19 @@ import {
   ServerMessage,
 } from "../src/shared/protocol";
 
-const DISCONNECT_GRACE_MS = 30_000;
+/**
+ * How long the current player has to act before the server auto-passes their
+ * turn. Applies to everyone (connected idlers and disconnected players alike),
+ * and drives the on-screen countdown via `state.turnDeadline`.
+ */
+const TURN_TIMEOUT_MS = 30_000;
 
 export default class UnoServer implements Party.Server {
   state: RoomState;
   /** connectionId -> playerId */
   conns = new Map<string, string>();
-  /** playerId -> pending auto-pass timer */
-  timers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** The single active turn timer, or null when no round is running. */
+  turnTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(readonly room: Party.Room) {
     this.state = createRoom(room.id.toUpperCase(), { ...DEFAULT_CONFIG });
@@ -62,8 +67,9 @@ export default class UnoServer implements Party.Server {
     const stillHere = [...this.conns.values()].includes(playerId);
     if (stillHere) return;
 
+    // The running turn timer covers a disconnected current player; when it's
+    // someone else's turn, their clock arms when play reaches them.
     setConnected(this.state, playerId, false);
-    this.scheduleAutoPass(playerId);
 
     if (this.state.phase === "lobby") {
       removePlayer(this.state, playerId);
@@ -95,7 +101,6 @@ export default class UnoServer implements Party.Server {
         if (!exists) return this.reject(conn, "No seat to rejoin");
         this.bind(conn, msg.playerId);
         setConnected(this.state, msg.playerId, true);
-        this.clearTimer(msg.playerId);
         conn.send(json({ type: "joined", playerId: msg.playerId }));
         this.broadcastState();
         return;
@@ -109,6 +114,10 @@ export default class UnoServer implements Party.Server {
 
     const isHost = this.state.hostPlayerId === playerId;
     let r: Result = { ok: true };
+    // Snapshot the turn/phase so we (re)arm the clock only when play actually
+    // moves on — not on side actions like calling or catching an UNO.
+    const prevSeat = this.state.currentSeat;
+    const prevPhase = this.state.phase;
 
     switch (msg.type) {
       case "setConfig":
@@ -122,19 +131,15 @@ export default class UnoServer implements Party.Server {
         break;
       case "playCard":
         r = playCard(this.state, playerId, msg.uid, msg.chosenColor);
-        if (r.ok) this.onTurnAdvanced();
         break;
       case "playCards":
         r = playCards(this.state, playerId, msg.uids, msg.chosenColor);
-        if (r.ok) this.onTurnAdvanced();
         break;
       case "drawCard":
         r = drawCard(this.state, playerId);
-        if (r.ok) this.onTurnAdvanced();
         break;
       case "passAfterDraw":
         r = passAfterDraw(this.state, playerId);
-        if (r.ok) this.onTurnAdvanced();
         break;
       case "callUno":
         r = callUno(this.state, playerId);
@@ -145,7 +150,6 @@ export default class UnoServer implements Party.Server {
       case "startNextRound":
         if (!isHost) return this.reject(conn, "Host only");
         r = startNextRound(this.state);
-        if (r.ok) this.onTurnAdvanced();
         break;
       case "leaveRoom":
         removePlayer(this.state, playerId);
@@ -154,6 +158,9 @@ export default class UnoServer implements Party.Server {
     }
 
     if (!r.ok) return this.reject(conn, r.reason);
+    if (this.state.currentSeat !== prevSeat || this.state.phase !== prevPhase) {
+      this.armTurnTimer();
+    }
     this.broadcastState();
   }
 
@@ -161,37 +168,41 @@ export default class UnoServer implements Party.Server {
 
   private bind(conn: Party.Connection, playerId: string) {
     this.conns.set(conn.id, playerId);
-    this.clearTimer(playerId);
   }
 
   private reject(conn: Party.Connection, reason: string) {
     conn.send(json({ type: "invalidAction", reason }));
   }
 
-  /** After a turn moves, (re)start the disconnect grace timer for the new player. */
-  private onTurnAdvanced() {
-    if (this.state.phase !== "in_round") return;
-    const cur = this.state.players.find((p) => p.seat === this.state.currentSeat);
-    if (cur && !cur.connected) this.scheduleAutoPass(cur.playerId);
+  /**
+   * (Re)arm the current player's turn clock. Records the deadline on the state
+   * so every client can render a matching countdown, and schedules the auto-pass
+   * that fires if they don't act in time. Clears the clock outside a round.
+   */
+  private armTurnTimer() {
+    if (this.turnTimer) {
+      clearTimeout(this.turnTimer);
+      this.turnTimer = null;
+    }
+    if (this.state.phase !== "in_round") {
+      this.state.turnDeadline = null;
+      return;
+    }
+    this.state.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+    this.turnTimer = setTimeout(() => this.onTurnTimeout(), TURN_TIMEOUT_MS + 50);
   }
 
-  private scheduleAutoPass(playerId: string) {
-    this.clearTimer(playerId);
+  /** The current player ran out of time — auto-pass them and re-arm the clock. */
+  private onTurnTimeout() {
+    this.turnTimer = null;
+    if (this.state.phase !== "in_round") {
+      this.state.turnDeadline = null;
+      return;
+    }
     const cur = this.state.players.find((p) => p.seat === this.state.currentSeat);
-    if (this.state.phase !== "in_round" || !cur || cur.playerId !== playerId) return;
-
-    const t = setTimeout(() => {
-      const r = autoPass(this.state, playerId);
-      if (r.ok) this.onTurnAdvanced();
-      this.broadcastState();
-    }, DISCONNECT_GRACE_MS);
-    this.timers.set(playerId, t);
-  }
-
-  private clearTimer(playerId: string) {
-    const t = this.timers.get(playerId);
-    if (t) clearTimeout(t);
-    this.timers.delete(playerId);
+    if (cur) autoPass(this.state, cur.playerId);
+    this.armTurnTimer();
+    this.broadcastState();
   }
 
   /** Send each connected socket its own personalized snapshot. */

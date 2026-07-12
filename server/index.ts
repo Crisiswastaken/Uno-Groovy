@@ -35,7 +35,12 @@ import {
   ServerMessage,
 } from "../src/shared/protocol";
 
-const DISCONNECT_GRACE_MS = 30_000;
+/**
+ * How long the current player has to act before the server auto-passes their
+ * turn. Applies to everyone (connected idlers and disconnected players alike),
+ * and drives the on-screen countdown via `state.turnDeadline`.
+ */
+const TURN_TIMEOUT_MS = 30_000;
 const PORT = Number(process.env.PORT) || 1999;
 /** Drop rooms with no live sockets after this long, to avoid a memory leak. */
 const EMPTY_ROOM_TTL_MS = 30 * 60_000;
@@ -45,8 +50,8 @@ interface Room {
   state: RoomState;
   /** live socket -> playerId (only populated once a socket has joined/rejoined) */
   conns: Map<WebSocket, string>;
-  /** playerId -> pending auto-pass timer */
-  timers: Map<string, ReturnType<typeof setTimeout>>;
+  /** The single active turn timer, or null when no round is running. */
+  turnTimer: ReturnType<typeof setTimeout> | null;
   /** epoch ms since the room last had zero connections, or null if occupied */
   emptySince: number | null;
 }
@@ -61,7 +66,7 @@ function getRoom(code: string): Room {
       code: key,
       state: createRoom(key, { ...DEFAULT_CONFIG }),
       conns: new Map(),
-      timers: new Map(),
+      turnTimer: null,
       emptySince: Date.now(),
     };
     rooms.set(key, room);
@@ -85,33 +90,37 @@ function broadcastState(room: Room) {
 
 function bind(room: Room, ws: WebSocket, playerId: string) {
   room.conns.set(ws, playerId);
-  clearTimer(room, playerId);
 }
 
-function clearTimer(room: Room, playerId: string) {
-  const t = room.timers.get(playerId);
-  if (t) clearTimeout(t);
-  room.timers.delete(playerId);
+/**
+ * (Re)arm the current player's turn clock. Records the deadline on the state so
+ * every client can render a matching countdown, and schedules the auto-pass
+ * that fires if they don't act in time. Clears the clock outside a round.
+ */
+function armTurnTimer(room: Room) {
+  if (room.turnTimer) {
+    clearTimeout(room.turnTimer);
+    room.turnTimer = null;
+  }
+  if (room.state.phase !== "in_round") {
+    room.state.turnDeadline = null;
+    return;
+  }
+  room.state.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+  room.turnTimer = setTimeout(() => onTurnTimeout(room), TURN_TIMEOUT_MS + 50);
 }
 
-/** After a turn moves, (re)start the disconnect grace timer for the new player. */
-function onTurnAdvanced(room: Room) {
-  if (room.state.phase !== "in_round") return;
+/** The current player ran out of time — auto-pass them and re-arm for the next. */
+function onTurnTimeout(room: Room) {
+  room.turnTimer = null;
+  if (room.state.phase !== "in_round") {
+    room.state.turnDeadline = null;
+    return;
+  }
   const cur = room.state.players.find((p) => p.seat === room.state.currentSeat);
-  if (cur && !cur.connected) scheduleAutoPass(room, cur.playerId);
-}
-
-function scheduleAutoPass(room: Room, playerId: string) {
-  clearTimer(room, playerId);
-  const cur = room.state.players.find((p) => p.seat === room.state.currentSeat);
-  if (room.state.phase !== "in_round" || !cur || cur.playerId !== playerId) return;
-
-  const t = setTimeout(() => {
-    const r = autoPass(room.state, playerId);
-    if (r.ok) onTurnAdvanced(room);
-    broadcastState(room);
-  }, DISCONNECT_GRACE_MS);
-  room.timers.set(playerId, t);
+  if (cur) autoPass(room.state, cur.playerId);
+  armTurnTimer(room); // for whoever's turn it is now (or the same player if stuck)
+  broadcastState(room);
 }
 
 function handle(room: Room, ws: WebSocket, msg: ClientMessage) {
@@ -135,7 +144,6 @@ function handle(room: Room, ws: WebSocket, msg: ClientMessage) {
       if (!exists) return reject(ws, "No seat to rejoin");
       bind(room, ws, msg.playerId);
       setConnected(state, msg.playerId, true);
-      clearTimer(room, msg.playerId);
       send(ws, { type: "joined", playerId: msg.playerId });
       broadcastState(room);
       return;
@@ -149,6 +157,10 @@ function handle(room: Room, ws: WebSocket, msg: ClientMessage) {
 
   const isHost = state.hostPlayerId === playerId;
   let r: Result = { ok: true };
+  // Snapshot the turn/phase so we can (re)arm the clock only when play actually
+  // moves on — not on side actions like calling or catching an UNO.
+  const prevSeat = state.currentSeat;
+  const prevPhase = state.phase;
 
   switch (msg.type) {
     case "setConfig":
@@ -162,19 +174,15 @@ function handle(room: Room, ws: WebSocket, msg: ClientMessage) {
       break;
     case "playCard":
       r = playCard(state, playerId, msg.uid, msg.chosenColor);
-      if (r.ok) onTurnAdvanced(room);
       break;
     case "playCards":
       r = playCards(state, playerId, msg.uids, msg.chosenColor);
-      if (r.ok) onTurnAdvanced(room);
       break;
     case "drawCard":
       r = drawCard(state, playerId);
-      if (r.ok) onTurnAdvanced(room);
       break;
     case "passAfterDraw":
       r = passAfterDraw(state, playerId);
-      if (r.ok) onTurnAdvanced(room);
       break;
     case "callUno":
       r = callUno(state, playerId);
@@ -185,7 +193,6 @@ function handle(room: Room, ws: WebSocket, msg: ClientMessage) {
     case "startNextRound":
       if (!isHost) return reject(ws, "Host only");
       r = startNextRound(state);
-      if (r.ok) onTurnAdvanced(room);
       break;
     case "leaveRoom":
       removePlayer(state, playerId);
@@ -194,6 +201,7 @@ function handle(room: Room, ws: WebSocket, msg: ClientMessage) {
   }
 
   if (!r.ok) return reject(ws, r.reason);
+  if (state.currentSeat !== prevSeat || state.phase !== prevPhase) armTurnTimer(room);
   broadcastState(room);
 }
 
@@ -215,11 +223,12 @@ function onClose(room: Room, ws: WebSocket) {
   }
   room.conns.delete(ws);
 
-  // Only mark disconnected if no other live socket holds this identity.
+  // Only mark disconnected if no other live socket holds this identity. The
+  // running turn timer covers a disconnected current player; when it's someone
+  // else's turn, their clock arms when play reaches them.
   const stillHere = [...room.conns.values()].includes(playerId);
   if (!stillHere) {
     setConnected(room.state, playerId, false);
-    scheduleAutoPass(room, playerId);
     if (room.state.phase === "lobby") removePlayer(room.state, playerId);
     broadcastState(room);
   }
@@ -278,7 +287,7 @@ setInterval(() => {
       room.emptySince !== null &&
       now - room.emptySince > EMPTY_ROOM_TTL_MS
     ) {
-      for (const t of room.timers.values()) clearTimeout(t);
+      if (room.turnTimer) clearTimeout(room.turnTimer);
       rooms.delete(key);
     }
   }

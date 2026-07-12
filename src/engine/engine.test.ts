@@ -3,6 +3,7 @@ import { buildDeck, cardPoints } from "./deck";
 import { canPlay, canContinueStack } from "./rules";
 import {
   addPlayer,
+  autoPass,
   createRoom,
   drawCard,
   playCard,
@@ -187,6 +188,43 @@ describe("stacking", () => {
     s.players[2].hand = [c("green", "1")];
     playCards(s, "p1", [s.players[0].hand[0].uid, s.players[0].hand[1].uid]);
     // Skip p2 and p3 → back to p1.
+    expect(s.currentSeat).toBe(0);
+  });
+});
+
+describe("turn timeout (autoPass)", () => {
+  it("auto-draws and passes a player who never acted, advancing the turn", () => {
+    const s = room();
+    setup(s, c("red", "5"), [c("blue", "9")]); // nothing playable on red
+    const before = s.players[0].hand.length;
+    const r = autoPass(s, "p1");
+    expect(r.ok).toBe(true);
+    expect(s.players[0].hand.length).toBe(before + 1); // drew one
+    expect(s.currentSeat).toBe(1); // turn moved on
+    expect(s.pendingPass).toBeNull();
+  });
+
+  it("advances a player who drew and then stalled (already has pendingPass)", () => {
+    const s = room();
+    setup(s, c("red", "5"), [c("blue", "9")]);
+    drawCard(s, "p1"); // p1 draws → pendingPass, still their turn
+    expect(s.pendingPass?.playerId).toBe("p1");
+    expect(s.currentSeat).toBe(0);
+    const r = autoPass(s, "p1");
+    expect(r.ok).toBe(true);
+    expect(s.pendingPass).toBeNull();
+    expect(s.currentSeat).toBe(1); // no longer hangs on p1
+  });
+
+  it("takes the full penalty when timing out against a draw stack", () => {
+    const s = room();
+    setup(s, c("red", "5"), [c("red", "draw2"), c("blue", "9")]);
+    playCard(s, "p1", s.players[0].hand[0].uid); // p1 plays +2, p2 faces stack
+    expect(s.pendingDraw).toBe(2);
+    const before = s.players[1].hand.length;
+    autoPass(s, "p2");
+    expect(s.players[1].hand.length).toBe(before + 2);
+    expect(s.pendingDraw).toBe(0);
     expect(s.currentSeat).toBe(0);
   });
 });

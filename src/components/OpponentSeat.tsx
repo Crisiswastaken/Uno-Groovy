@@ -3,6 +3,7 @@
 import type { ClientView } from "../engine/types";
 import { avatarFor } from "../lib/avatars";
 import { CardBack } from "./Card";
+import { CountdownRing } from "./TurnTimer";
 import { Card as Img } from "./ui/Card";
 
 type PlayerView = ClientView["players"][number];
@@ -13,21 +14,24 @@ type PlayerView = ClientView["players"][number];
    Keeps the live-only affordances the mock omits: a disconnected marker and
    the "Catch! no UNO" button. */
 
-/** Rounded avatar tile with an optional turn glow + disconnected marker. */
+/** Rounded avatar tile with an optional turn glow, countdown + disconnected marker. */
 function Avatar({
   player,
   size,
   glow,
+  turnEndsAt,
 }: {
   player: PlayerView;
   size: number;
   glow: boolean;
+  /** Epoch-ms turn deadline when this seat is active; drives the ring. */
+  turnEndsAt?: number | null;
 }) {
   return (
     <div className="relative">
       <div
         style={{ width: size, height: size }}
-        className={`shrink-0 rounded-[16px] card-shadow ${glow ? "turn-glow" : ""}`}
+        className={`shrink-0 rounded-[10px] card-shadow ${glow ? "turn-glow" : ""}`}
       >
         <Img
           src={avatarFor(player.seat)}
@@ -38,9 +42,10 @@ function Avatar({
           unoptimized
           draggable={false}
           style={{ width: "100%", height: "100%" }}
-          className="object-cover pointer-events-none rounded-[18px]"
+          className="object-cover pointer-events-none rounded-[10px]"
         />
       </div>
+      {glow && <CountdownRing deadline={turnEndsAt ?? null} size={size} radius={10} />}
       {!player.connected && (
         <span
           title="disconnected"
@@ -90,22 +95,26 @@ export function OpponentSeat({
   player,
   isCurrent,
   orientation,
+  turnEndsAt,
   onCatch,
 }: {
   player: PlayerView;
   isCurrent: boolean;
   /** Layout of the seat relative to the table edge. */
   orientation: "top" | "left" | "right";
+  /** Epoch-ms deadline for this player's turn when active; drives the ring. */
+  turnEndsAt?: number | null;
   onCatch?: () => void;
 }) {
   const count = player.handCount;
   const vertical = orientation !== "top";
-  // One more back than the badge count, capped — reads as a held fan, per mock.
-  const backs = Math.min(Math.max(count, 1) + 1, 8);
+  // Show a fan of backs matching the real count, clamped to a tidy 1–7 so a big
+  // hand never sprawls off the seat and an empty-looking seat never appears.
+  const backs = Math.min(Math.max(count, 1), 7);
 
   const identity = (
     <div className="flex flex-col items-center gap-1">
-      <Avatar player={player} size={54} glow={isCurrent} />
+      <Avatar player={player} size={54} glow={isCurrent} turnEndsAt={turnEndsAt} />
       <NamePill name={player.displayName} active={isCurrent} connected={player.connected} />
     </div>
   );

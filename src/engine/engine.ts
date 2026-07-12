@@ -34,6 +34,7 @@ export function createRoom(roomCode: string, config: RuleConfig): RoomState {
     currentSeat: 0,
     pendingDraw: 0,
     pendingPass: null,
+    turnDeadline: null,
     unoVulnerableSeat: null,
     scores: {},
     roundWinnerId: null,
@@ -438,20 +439,61 @@ export function catchMissedUno(
   return ok;
 }
 
-/** Server-driven auto-move for a disconnected player who timed out (§9.1). */
+/**
+ * Server-driven auto-move for a player who ran out of time — whether they never
+ * acted or drew and then stalled. Always advances the turn so a round can never
+ * hang on one seat.
+ */
 export function autoPass(state: RoomState, playerId: string): Result {
   if (state.phase !== "in_round") return fail("Not in a round");
   const player = currentPlayer(state);
   if (!player || player.playerId !== playerId) return fail("Not their turn");
+
+  // Already drew this turn: pass if allowed, else (forcePlay) auto-play the card.
+  if (state.pendingPass && state.pendingPass.playerId === playerId) {
+    if (!state.pendingPass.mustPlay) return passAfterDraw(state, playerId);
+    return autoPlayForced(state, player);
+  }
 
   if (state.pendingDraw > 0) {
     return drawCard(state, playerId);
   }
   const d = drawCard(state, playerId);
   if (!d.ok) return d;
-  // If forcePlay locked them into playing, we can't auto-pass; leave for rejoin.
-  if (state.pendingPass && state.pendingPass.mustPlay) return ok;
+  // forcePlay locked them into playing the drawn card — do it for them.
+  if (state.pendingPass && state.pendingPass.mustPlay) return autoPlayForced(state, player);
   return passAfterDraw(state, playerId);
+}
+
+/** Play the first drawn-and-playable card on behalf of a timed-out player. */
+function autoPlayForced(state: RoomState, player: Player): Result {
+  const drawnUids = state.pendingPass?.drawnUids ?? [];
+  const opts = {
+    activeColor: state.activeColor,
+    discardTop: discardTop(state),
+    pendingDraw: state.pendingDraw,
+    config: state.config,
+  };
+  const uid = drawnUids.find((u) => {
+    const c = player.hand.find((x) => x.uid === u);
+    return !!c && canPlay(c, opts);
+  });
+  if (!uid) {
+    // Nothing playable after all — release the lock and move on.
+    state.pendingPass = null;
+    advance(state, 1);
+    return ok;
+  }
+  const card = player.hand.find((x) => x.uid === uid)!;
+  const color = isWild(card.value) ? autoColorFor(player) : undefined;
+  return playCards(state, player.playerId, [uid], color);
+}
+
+/** A sensible color for an auto-played wild: the player's most-held color. */
+function autoColorFor(player: Player): Color {
+  const counts: Record<Color, number> = { red: 0, yellow: 0, green: 0, blue: 0 };
+  for (const c of player.hand) if (c.color) counts[c.color]++;
+  return (Object.keys(counts) as Color[]).reduce((a, b) => (counts[b] > counts[a] ? b : a), "red");
 }
 
 export function startNextRound(state: RoomState): Result {
@@ -547,6 +589,7 @@ export function getClientView(state: RoomState, playerId: string): ClientView {
     yourHand: me ? me.hand : [],
     drawPileCount: state.drawPile.length,
     discardTop: discardTop(state),
+    recentDiscard: state.discardPile.slice(-4),
     activeColor: state.activeColor,
     direction: state.direction,
     currentSeat: state.currentSeat,
@@ -555,6 +598,7 @@ export function getClientView(state: RoomState, playerId: string): ClientView {
       state.pendingPass && state.pendingPass.playerId === playerId
         ? state.pendingPass
         : null,
+    turnEndsAt: state.phase === "in_round" ? state.turnDeadline : null,
     scores: state.scores,
     roundWinnerId: state.roundWinnerId,
     matchWinnerId: state.matchWinnerId,

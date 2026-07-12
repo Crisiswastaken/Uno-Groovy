@@ -9,6 +9,7 @@ import { usePlaySound } from "../hooks/use-play-sound";
 import { CardBack, CardFace, swatch } from "./Card";
 import { ColorPicker } from "./ColorPicker";
 import { OpponentSeat } from "./OpponentSeat";
+import { CountdownRing } from "./TurnTimer";
 import { Card as Img } from "./ui/Card";
 import { centerOf, FlightLayer, useFlights } from "./cardFlight";
 
@@ -124,6 +125,12 @@ export function GameTable({
   // A uid I just launched toward the discard; its landing flight replaces the
   // pile's own drop-in so the card reads as one continuous motion.
   const flewToDiscard = useRef<string | null>(null);
+  // The uid currently flying to the discard: its real card is hidden on the pile
+  // until the flight lands, so it doesn't appear twice (static + animated).
+  const [flyingDiscardUid, setFlyingDiscardUid] = useState<string | null>(null);
+  // Uids currently flying from the draw pile into the hand: hidden in the fan
+  // until they land, so a drawn card doesn't appear twice (static + animated).
+  const [flyingHandUids, setFlyingHandUids] = useState<Set<string>>(new Set());
 
   const sendPlay = (uids: string[], color?: Color) => {
     if (uids.length === 0) return;
@@ -134,44 +141,82 @@ export function GameTable({
     // still mounted now).
     const to = centerOf("[data-discard]");
     const froms = uids.map((u) => centerOf(`[data-hand-uid="${u}"]`));
+    const topUid = uids[uids.length - 1];
     let launched = false;
     uids.forEach((uid, i) => {
       const from = froms[i];
       const c = handByUid.get(uid);
       if (from && to && c) {
-        fly({ card: c, from, to, toRot: -6, width: 150, duration: 340, lift: 44 });
+        // The last card owns the discard-top slot; reveal it when it lands.
+        const onDone = uid === topUid ? () => setFlyingDiscardUid(null) : undefined;
+        fly({ card: c, from, to, toRot: -6, width: 150, duration: 340, lift: 44 }, onDone);
         launched = true;
       }
     });
     // Only hand the landing over to the flight if one actually took off; else
     // let the pile keep its own drop-in so the card is never truly abrupt.
-    if (launched) flewToDiscard.current = uids[uids.length - 1];
+    if (launched) {
+      flewToDiscard.current = topUid;
+      setFlyingDiscardUid(topUid); // hide the static top until the flight lands
+    }
 
     if (uids.length === 1) send({ type: "playCard", uid: uids[0], chosenColor: color });
     else send({ type: "playCards", uids, chosenColor: color });
     setSelected([]);
   };
 
-  /** Fly a face-down card off the draw pile into the hand, then draw for real. */
-  const flyDrawToHand = (count = 1) => {
-    const from = centerOf("[data-draw]");
-    if (!from) return;
-    const to =
-      centerOf("[data-hand-target]") ?? { x: from.x, y: window.innerHeight - 90 };
-    const n = Math.min(Math.max(1, count), 6);
-    for (let i = 0; i < n; i++) {
-      window.setTimeout(
-        () => fly({ card: null, from, to, width: 100, duration: 360, lift: 28 }),
-        i * 90,
-      );
-    }
-  };
-
   const handleDraw = () => {
     drawSfx.play();
-    flyDrawToHand(1);
     send({ type: "drawCard" });
   };
+
+  // Draw reveal (§#5): a card actually entering the hand flies off the draw
+  // pile toward the center of the table, flips to reveal its real face, then
+  // tucks into the tray. Driven off the hand diff so we can show the true card —
+  // cards only ever *enter* the hand by drawing, so any addition is a draw.
+  const knownHandUids = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const prev = knownHandUids.current;
+    const added = myHand.filter((c) => !prev.has(c.uid));
+    const isInitialFill = prev.size === 0; // first load / deal — skip the storm
+    // A big batch is a fresh deal, not a draw; keep those instant.
+    if (!isInitialFill && added.length > 0 && added.length <= 4) {
+      // Hide the drawn cards in the fan up front; each reveals when it lands.
+      setFlyingHandUids((s) => {
+        const n = new Set(s);
+        added.forEach((c) => n.add(c.uid));
+        return n;
+      });
+      const unhide = (uid: string) =>
+        setFlyingHandUids((s) => {
+          const n = new Set(s);
+          n.delete(uid);
+          return n;
+        });
+      added.forEach((c, i) => {
+        window.setTimeout(() => {
+          const from = centerOf("[data-draw]");
+          const via = centerOf("[data-discard]");
+          // Land on the card's real resting slot in the fan (it's already
+          // mounted, just hidden), so it merges into place on arrival.
+          const to =
+            centerOf(`[data-hand-uid="${c.uid}"]`) ??
+            centerOf("[data-hand-target]") ??
+            (from ? { x: from.x, y: window.innerHeight - 90 } : null);
+          if (from && to) {
+            fly(
+              { card: c, from, via: via ?? undefined, to, reveal: true, width: 112, duration: 640, lift: 34 },
+              () => unhide(c.uid),
+            );
+          } else {
+            unhide(c.uid); // couldn't animate — show it immediately
+          }
+        }, i * 130);
+      });
+    }
+    knownHandUids.current = new Set(myHand.map((c) => c.uid));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myHand]);
 
   // Auto-resolve a draw penalty: when it's my turn, a +2/+4 stack is pending,
   // and I hold nothing that can continue it, the cards are handed to me
@@ -185,7 +230,7 @@ export function GameTable({
     const key = `${view.discardTop?.uid ?? ""}:${view.pendingDraw}`;
     if (autoDrawGuard.current === key) return;
     autoDrawGuard.current = key;
-    flyDrawToHand(view.pendingDraw);
+    // The drawn cards animate via the hand-diff reveal effect above.
     const t = window.setTimeout(() => send({ type: "drawCard" }), 400);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -258,6 +303,9 @@ export function GameTable({
 
   const canDraw = isMyTurn && !view.pendingPass;
   const canPass = isMyTurn && !!view.pendingPass && !mustPlay;
+  // Nudge the draw pile (§#1): my turn, nothing in hand is playable, so drawing
+  // is the only move. Kept subtle — a soft pulse, not an alarm.
+  const noPlayable = canDraw && myHand.length > 0 && !myHand.some((c) => canOpenWith(c));
   // UNO is called on your last-but-one card — only ever with a single card left.
   const canCallUno = myHand.length === 1 && !me?.hasCalledUno;
 
@@ -267,6 +315,7 @@ export function GameTable({
       player={p}
       orientation={o}
       isCurrent={view.currentSeat === p.seat}
+      turnEndsAt={view.currentSeat === p.seat ? view.turnEndsAt : null}
       onCatch={() => {
         catchSfx.play();
         send({ type: "catchMissedUno", targetPlayerId: p.playerId });
@@ -313,14 +362,17 @@ export function GameTable({
               count={view.drawPileCount}
               pendingDraw={view.pendingDraw}
               canDraw={canDraw}
+              highlight={noPlayable}
               onDraw={handleDraw}
             />
           </div>
 
           <DiscardPile
             top={view.discardTop}
+            recent={view.recentDiscard}
             activeColor={view.activeColor}
             drop={view.discardTop?.uid !== flewToDiscard.current}
+            hideTopUid={flyingDiscardUid}
           />
         </div>
       </div>
@@ -331,7 +383,7 @@ export function GameTable({
           <div className="flex items-end gap-2">
             {/* You — the local player. */}
             <div className="flex flex-col items-center gap-1 pb-3 shrink-0 z-10">
-              <MyAvatar seat={mySeat} glow={isMyTurn} />
+              <MyAvatar seat={mySeat} glow={isMyTurn} turnEndsAt={isMyTurn ? view.turnEndsAt : null} />
               <span className="px-2.5 py-0.5 rounded-[10px] bg-uno-ink text-uno-cream text-[11px] font-extrabold leading-none shadow-[0_2px_5px_rgba(43,42,39,0.3)]">
                 You
               </span>
@@ -344,6 +396,7 @@ export function GameTable({
                 isPlayable={cardClickable}
                 isHighlighted={(c) => mustPlay && drawnUids.includes(c.uid)}
                 isSelected={(c) => selected.includes(c.uid)}
+                isHidden={(c) => flyingHandUids.has(c.uid)}
                 onPlay={onCardClick}
               />
             </div>
@@ -433,24 +486,35 @@ function WildColorPopup({ color }: { color: Color }) {
 
 /* ----------------------------------------------------------- Local avatar --- */
 
-function MyAvatar({ seat, glow }: { seat: number; glow: boolean }) {
+function MyAvatar({
+  seat,
+  glow,
+  turnEndsAt,
+}: {
+  seat: number;
+  glow: boolean;
+  turnEndsAt?: number | null;
+}) {
   const size = 52;
   return (
-    <div
-      style={{ width: size, height: size }}
-      className={`shrink-0 rounded-[18px] card-shadow ${glow ? "turn-glow" : ""}`}
-    >
-      <Img
-        src={avatarFor(seat)}
-        alt=""
-        width={size}
-        height={size}
-        rounded={false}
-        unoptimized
-        draggable={false}
-        style={{ width: "100%", height: "100%" }}
-        className="object-cover pointer-events-none rounded-[18px]"
-      />
+    <div className="relative" style={{ width: size, height: size }}>
+      <div
+        style={{ width: size, height: size }}
+        className={`shrink-0 rounded-[10px] card-shadow ${glow ? "turn-glow" : ""}`}
+      >
+        <Img
+          src={avatarFor(seat)}
+          alt=""
+          width={size}
+          height={size}
+          rounded={false}
+          unoptimized
+          draggable={false}
+          style={{ width: "100%", height: "100%" }}
+          className="object-cover pointer-events-none rounded-[10px]"
+        />
+      </div>
+      {glow && <CountdownRing deadline={turnEndsAt ?? null} size={size} radius={10} />}
     </div>
   );
 }
@@ -461,11 +525,14 @@ function DrawPile({
   count,
   pendingDraw,
   canDraw,
+  highlight = false,
   onDraw,
 }: {
   count: number;
   pendingDraw: number;
   canDraw: boolean;
+  /** Subtly draw attention: it's your turn and nothing in hand is playable. */
+  highlight?: boolean;
   onDraw: () => void;
 }) {
   const W = 108; // a touch smaller than the discard, so the discard reads focal
@@ -479,7 +546,7 @@ function DrawPile({
       style={{ width: W, height: Math.round((W * 3) / 2) + 10 }}
       className={`group relative shrink-0 transition-transform duration-200 ${
         canDraw ? "cursor-pointer hover:-translate-y-1" : "cursor-default"
-      }`}
+      } ${highlight ? "draw-hint" : ""}`}
       title="Draw a card"
     >
       {/* Soft contact shadow grounding the deck on the table. */}
@@ -488,6 +555,14 @@ function DrawPile({
         className="absolute left-1/2 -translate-x-1/2 rounded-[50%] blur-md pointer-events-none"
         style={{ width: W * 0.82, height: 20, bottom: -10, zIndex: 0, background: "rgba(43,42,39,0.30)" }}
       />
+      {/* Soft attention halo when drawing is your only move. */}
+      {highlight && (
+        <span
+          aria-hidden
+          className="draw-hint-halo absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 -z-10 rounded-[18px] pointer-events-none"
+          style={{ width: W + 22, height: Math.round((W * 3) / 2) + 22 }}
+        />
+      )}
       {Array.from({ length: layers }).map((_, i) => {
         const isTop = i === layers - 1;
         return (
@@ -516,69 +591,81 @@ function DrawPile({
 
 /* ---------------------------------------------------------- Discard pile --- */
 
-// Cosmetic cards fanned under the live discard, so the pile reads with depth.
-const GHOSTS: { card: Card; rot: number; x: number; y: number }[] = [
-  { card: { uid: "ghost-g", color: "green", value: "reverse" }, rot: -15, x: -16, y: 6 },
-  { card: { uid: "ghost-b", color: "blue", value: "reverse" }, rot: 13, x: 14, y: 2 },
-  { card: { uid: "ghost-r", color: "red", value: "reverse" }, rot: -5, x: -3, y: -3 },
+// Fan offsets for the recently played cards, indexed by depth below the top
+// card (0 = the card just under the top). Earlier plays peek out from beneath
+// so their colors stay visible — a blue 4 reads even once a red 4 lands on it.
+const STACK_OFFSETS: { x: number; y: number; rot: number }[] = [
+  { x: -26, y: 9, rot: -17 },
+  { x: 24, y: 13, rot: 11 },
+  { x: -7, y: -7, rot: 4 },
 ];
 
 function DiscardPile({
   top,
+  recent,
   activeColor,
   drop = true,
+  hideTopUid = null,
 }: {
   top: Card | null;
+  /** Recent discards, oldest first, top card last. Fanned for color history. */
+  recent: Card[];
   activeColor: Color | null;
   /** Play the drop-in animation. Off when a hand flight already animated it in. */
   drop?: boolean;
+  /** While a play-flight for this uid is airborne, don't render it on the pile. */
+  hideTopUid?: string | null;
 }) {
   const W = 150; // the board's primary focal point
   const h = Math.round((W * 3) / 2);
+
+  // Render the recent cards as one identity-stable stack (keyed by uid). When a
+  // new card lands, the previous cards keep their DOM elements and just change
+  // slot, so they *glide* from the top into the fan instead of snapping (§#10).
+  const cards = recent.length ? recent : top ? [top] : [];
+  const lastIdx = cards.length - 1;
+
   return (
-    <div data-discard className="relative shrink-0" style={{ width: W + 40, height: h + 30 }}>
-      {/* Active-color ring bloom hugging the top card. */}
-      {activeColor && (
-        <span
-          aria-hidden
-          className="absolute left-1/2 top-1/2 rounded-[20px] pointer-events-none"
-          style={{
-            width: W + 10,
-            height: h + 10,
-            marginLeft: -(W + 10) / 2,
-            marginTop: -(h + 10) / 2,
-            transform: "rotate(-6deg)",
-            boxShadow: `0 0 0 4px ${swatch[activeColor]}66`,
-          }}
-        />
-      )}
-
-      {GHOSTS.map((g) => (
-        <div
-          key={g.card.uid}
-          className="absolute left-1/2 top-1/2 card-shadow-sm"
-          style={{ marginLeft: -W / 2 + g.x, marginTop: -h / 2 + g.y, transform: `rotate(${g.rot}deg)` }}
-        >
-          <CardFace card={g.card} width={W} />
-        </div>
-      ))}
-
-      {top && (
-        <div
-          key={top.uid}
-          className={`absolute left-1/2 top-1/2 card-shadow-lg ${drop ? "animate-card-drop" : ""}`}
-          style={
-            {
-              marginLeft: -W / 2,
-              marginTop: -h / 2,
-              "--rot": "-6deg",
-              transform: "rotate(-6deg)",
-            } as React.CSSProperties
-          }
-        >
-          <CardFace card={top} width={W} />
-        </div>
-      )}
+    <div data-discard className="relative shrink-0" style={{ width: W + 60, height: h + 30 }}>
+      {cards.map((card, i) => {
+        const depth = lastIdx - i; // 0 = current top card
+        const isTop = depth === 0;
+        const o = isTop
+          ? { x: 0, y: 0, rot: -6 }
+          : STACK_OFFSETS[depth - 1] ?? STACK_OFFSETS[STACK_OFFSETS.length - 1];
+        // The incoming top card is hidden while its play-flight is still airborne.
+        const hidden = isTop && card.uid === hideTopUid;
+        return (
+          <div
+            key={card.uid}
+            className={`absolute left-1/2 top-1/2 ${isTop ? "card-shadow-lg" : "card-shadow-sm"} ${
+              isTop && drop && !hidden ? "animate-card-drop" : ""
+            }`}
+            style={
+              {
+                marginLeft: -W / 2,
+                marginTop: -h / 2,
+                zIndex: 20 - depth,
+                visibility: hidden ? "hidden" : "visible",
+                transform: `translate(${o.x}px, ${o.y}px) rotate(${o.rot}deg)`,
+                transition: "transform 480ms cubic-bezier(0.22,1,0.36,1)",
+                "--rot": `${o.rot}deg`,
+              } as React.CSSProperties
+            }
+          >
+            <CardFace card={card} width={W} />
+            {/* Chosen-color dot for a wild / +4, so the active color is unmistakable (§#6). */}
+            {isTop && isWild(card.value) && activeColor && (
+              <span
+                className="absolute left-1/2 -bottom-3 -translate-x-1/2 grid place-items-center w-9 h-9 rounded-full bg-uno-cream border-2 border-uno-ink/15 shadow-[0_3px_8px_rgba(43,42,39,0.35)]"
+                style={{ zIndex: 2 }}
+              >
+                <span className="w-6 h-6 rounded-full" style={{ background: swatch[activeColor] }} />
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -592,37 +679,55 @@ function DirectionArrows({
   direction: 1 | -1;
   activeColor: Color | null;
 }) {
-  // Sit well outside the discard (a larger radius) and take on the current
-  // active color, so the flow of play reads at a glance without a separate
-  // color chip. Falls back to a neutral ink before the first card lands.
+  // Two symmetric curved arrows hugging the left and right of the discard, each
+  // a smooth arc capped with a solid arrowhead pointing the way play flows
+  // (clockwise by default; scaleX mirrors the whole rig for reverse). Tinted
+  // with the active color, neutral ink before the first card lands.
+  const color = activeColor ? swatch[activeColor] : "var(--color-uno-ink1)";
+  const cx = 200;
+  const cy = 200;
+  const R = 150; // arc radius, comfortably outside the 150px discard
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const pt = (deg: number) => ({ x: cx + R * Math.cos(rad(deg)), y: cy + R * Math.sin(rad(deg)) });
+
+  // An arc from a0→a1 (clockwise, i.e. increasing angle in screen coords) with a
+  // filled arrowhead at the leading (a1) end, tangent to the curve.
+  const arrow = (a0: number, a1: number) => {
+    const p0 = pt(a0);
+    const p1 = pt(a1);
+    const d = `M ${p0.x} ${p0.y} A ${R} ${R} 0 0 1 ${p1.x} ${p1.y}`;
+    const t = rad(a1 + 90); // tangent (direction of travel) at the leading end
+    const dx = Math.cos(t);
+    const dy = Math.sin(t);
+    const px = -dy; // perpendicular
+    const py = dx;
+    const L = 20; // arrowhead length
+    const Wt = 11; // arrowhead half-width
+    const tip = { x: p1.x + dx * L * 0.5, y: p1.y + dy * L * 0.5 };
+    const back = { x: p1.x - dx * L * 0.5, y: p1.y - dy * L * 0.5 };
+    const head = `M ${tip.x} ${tip.y} L ${back.x + px * Wt} ${back.y + py * Wt} L ${back.x - px * Wt} ${back.y - py * Wt} Z`;
+    return { d, head };
+  };
+
+  const right = arrow(-46, 46); // east side, leading downward (clockwise)
+  const left = arrow(134, 226); // west side, leading upward (clockwise)
+
   return (
     <div
       aria-hidden
-      className="absolute left-1/2 top-1/2 pointer-events-none arrow-drift"
+      className="absolute left-1/2 top-1/2 pointer-events-none arrow-orbit"
       style={{
-        width: 480,
-        height: 480,
-        color: activeColor ? swatch[activeColor] : "var(--color-uno-ink1)",
+        width: 430,
+        height: 430,
+        color,
         transform: `translate(-50%,-50%) scaleX(${direction === -1 ? -1 : 1})`,
       }}
     >
-      <svg viewBox="0 0 320 320" className="w-full h-full" fill="none">
-        <path
-          d="M250 92 A130 130 0 0 1 250 228"
-          stroke="currentColor"
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeDasharray="1.5 17"
-        />
-        <path d="M250 228 l-16 -4 l13 -14 z" fill="currentColor" />
-        <path
-          d="M70 228 A130 130 0 0 1 70 92"
-          stroke="currentColor"
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeDasharray="1.5 17"
-        />
-        <path d="M70 92 l16 4 l-13 14 z" fill="currentColor" />
+      <svg viewBox="0 0 400 400" className="w-full h-full" fill="none">
+        <path d={right.d} stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
+        <path d={right.head} fill="currentColor" />
+        <path d={left.d} stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
+        <path d={left.head} fill="currentColor" />
       </svg>
     </div>
   );
@@ -696,12 +801,15 @@ function Hand({
   isPlayable,
   isHighlighted,
   isSelected,
+  isHidden,
   onPlay,
 }: {
   cards: Card[];
   isPlayable: (c: Card) => boolean;
   isHighlighted: (c: Card) => boolean;
   isSelected: (c: Card) => boolean;
+  /** Card is mid-flight from the draw pile — keep its slot but hide the face. */
+  isHidden?: (c: Card) => boolean;
   onPlay: (c: Card) => void;
 }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -769,6 +877,8 @@ function Hand({
           lifted = true;
         }
 
+        const hidden = isHidden?.(card) ?? false;
+
         return (
           <div
             key={card.uid}
@@ -780,6 +890,7 @@ function Hand({
               transform: `translate(${x}px, ${y}px) rotate(${rot}deg) scale(${scale})`,
               transformOrigin: "bottom center",
               zIndex: z,
+              visibility: hidden ? "hidden" : "visible",
               transition: "transform 220ms cubic-bezier(0.22,1,0.36,1), margin 220ms ease",
             }}
           >

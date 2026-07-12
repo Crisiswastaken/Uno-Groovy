@@ -87,6 +87,12 @@ export interface RoomState {
   currentSeat: number;
   pendingDraw: number;
   pendingPass: PendingPass | null;
+  /**
+   * Epoch-ms deadline by which the current player must act before the server
+   * auto-passes their turn, or null when no round is in progress. Set by the
+   * transport (server), read into the client view for the countdown timer.
+   */
+  turnDeadline: number | null;
   /** Seat that is currently catchable for a missed UNO call, or null. */
   unoVulnerableSeat: number | null;
   scores: Record<string, number>;
@@ -114,11 +120,19 @@ export interface ClientView {
   yourHand: Card[];
   drawPileCount: number;
   discardTop: Card | null;
+  /**
+   * The last few cards on the discard pile, oldest first, top card last. Used to
+   * fan the recently played cards under the top card so their colors remain
+   * visible (e.g. a blue 4 peeking out beneath a red 4).
+   */
+  recentDiscard: Card[];
   activeColor: Color | null;
   direction: 1 | -1;
   currentSeat: number;
   pendingDraw: number;
   pendingPass: PendingPass | null;
+  /** Epoch-ms deadline for the current turn, or null. Drives the countdown. */
+  turnEndsAt: number | null;
   scores: Record<string, number>;
   roundWinnerId: string | null;
   matchWinnerId: string | null;
