@@ -1,4 +1,4 @@
-# Custom UNO
+# Uno - Groovy
 
 Web-based multiplayer **UNO** with host-configurable house rules — built with a
 server-authoritative game engine so hands stay secret and dropped players can
