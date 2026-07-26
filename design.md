@@ -12,8 +12,22 @@ Mode: **Light-first.** White (`#f1e7dc`) is the primary background; black (`#2b2
 | Primary / Display | **Vodka Sans** | Regular only (one weight) |
 | Secondary / UI & Body | **Switzer** | Any weight, as needed |
 
-- Vodka Sans → titles, logo, "UNO!" callouts, big banners/numbers.
+- Vodka Sans → titles, logo, UNO callouts, big banners.
 - Switzer → everything else: buttons, labels, player names, body copy, lobby/game UI text.
+
+> ### ⚠️ Vodka Sans is letters-only
+>
+> The face ships **A–Z and nothing else** — no digits, no punctuation, no
+> symbols. Anything set in it that isn't a letter renders as tofu.
+>
+> Consequences already baked into the app:
+> - **Room codes are 6 letters** (A–Z minus the I/L/O lookalikes). They're shown
+>   in Vodka Sans in the lobby, so digits were unreadable.
+> - The win screen reads **`WINS`**, not `WINS!`.
+> - Player names appear in Vodka Sans on the win screen — a name with a hyphen
+>   or an apostrophe will show tofu there.
+>
+> If a string can contain a number or a symbol, set it in **Switzer**.
 
 ---
 

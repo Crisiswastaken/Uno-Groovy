@@ -18,6 +18,29 @@ import { centerOf, FlightLayer, useFlights } from "./cardFlight";
    GameTable verbatim so behavior is identical — every action still flows
    through `send`, driven by the shared `view`. */
 
+/* ------------------------------------------------------- Card geometry ---
+   The card art is 660×1029 — ratio ≈1.559, notably TALLER than a flat 2:3.
+   Reserve boxes computed as `W * 1.5` therefore came up ~4% short, which is
+   part of why raised cards were shaved by the hand tray's clip. Everything
+   that needs a card's rendered height goes through `cardH`. See the scar
+   note at globals.css:269. */
+const CARD_RATIO = 1029 / 660;
+const cardH = (w: number) => Math.round(w * CARD_RATIO);
+
+/** Hand-card width. Scales gently with the viewport so it stays readable on any
+    phone, but is deliberately independent of hand size — an overflowing fan
+    becomes a swipe carousel rather than crushing the cards to slivers. */
+const handCardW = (vw: number) => Math.round(Math.max(54, Math.min(72, vw * 0.19)));
+
+/** Headroom above the card baseline inside the hand scroller: the max lift of a
+    playable+selected card (30px), plus the bulge from the ±15° fan rotation
+    (~14px), plus the drop-shadow blur. The scroller must clip on Y (CSS can't
+    pair `overflow-x: auto` with `overflow-y: visible`), so the box has to be
+    tall enough to contain all of it. */
+const LIFT_UP = 70;
+/** Max the fan's outer edges dip below that baseline. */
+const DROP = 16;
+
 type Orientation = "top" | "left" | "right";
 
 /** Where each opponent sits, by index in turn order (mirrors GameTable). */
@@ -55,6 +78,11 @@ export function MobileGameTable({
     window.addEventListener("resize", f);
     return () => window.removeEventListener("resize", f);
   }, []);
+
+  // Height of the glass slab behind the hand. Sized off the card, not the hand's
+  // full reserve box, so its top edge crosses the cards near their shoulders and
+  // they visibly rise out of it (see the tray markup below).
+  const slabH = DROP + Math.round(cardH(handCardW(vw)) * 0.86);
 
   const opponents = useMemo(() => {
     const n = view.players.length;
@@ -322,13 +350,17 @@ export function MobileGameTable({
         {seats.right.map((p) => renderSeat(p, "right"))}
       </div>
 
-      {/* Center piles. The SEAM between the draw & discard is pinned to the
-          screen centre (≈ the star's centre at 50% of the art), with each pile
-          flanking it, so the pair reads centred despite the two cards being
-          different widths — and the direction arcs orbit that exact point. */}
-      <div className="absolute left-1/2 top-1/2 -translate-y-1/2">
-        <MobileArrows direction={view.direction} activeColor={view.activeColor} />
-        <div className="absolute top-1/2 right-0 -translate-y-1/2 mr-1.5">
+      {/* Center piles. The draw pile is pushed off to the LEFT so the discard
+          has room to fan out the last few plays (as desktop does) instead of
+          stacking them dead on top of each other. The pair is centred as a
+          GROUP on the star rather than mirroring desktop's dead-centre discard:
+          at 360px a centred 90px discard plus a draw pile beside it would run
+          straight into the side opponent seats. The arcs stay on the group's
+          centre — i.e. on the star. */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+        <div className="relative flex items-center gap-3">
+          <MobileArrows direction={view.direction} activeColor={view.activeColor} />
+
           <MobileDrawPile
             count={view.drawPileCount}
             pendingDraw={view.pendingDraw}
@@ -336,10 +368,10 @@ export function MobileGameTable({
             highlight={noPlayable}
             onDraw={handleDraw}
           />
-        </div>
-        <div className="absolute top-1/2 left-0 -translate-y-1/2 ml-1.5">
+
           <MobileDiscard
             top={view.discardTop}
+            recent={view.recentDiscard}
             activeColor={view.activeColor}
             drop={view.discardTop?.uid !== flewToDiscard.current}
             hideTopUid={flyingDiscardUid}
@@ -402,27 +434,40 @@ export function MobileGameTable({
           </button>
         )}
 
-        <div
-          className="relative w-full bg-uno-cream/45 backdrop-blur-2xl rounded-t-[26px] border-t border-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] pt-3 pb-3"
-          data-hand-target
-        >
-          <MobileHand
-            cards={myHand}
-            vw={vw}
-            isPlayable={cardClickable}
-            isHighlighted={(c) => mustPlay && drawnUids.includes(c.uid)}
-            isSelected={(c) => selected.includes(c.uid)}
-            isHidden={(c) => flyingHandUids.has(c.uid)}
-            onPlay={onCardClick}
+        {/* The glass slab is a short, bottom-anchored BACKDROP rather than the
+            hand's wrapper. As the wrapper it inherited the hand's full reserve
+            height (card + lift headroom + arc) and read as a tall empty pane;
+            as a backdrop it stops around the cards' shoulders and they rise out
+            of it, matching the desktop tray. */}
+        <div className="relative w-full" data-hand-target>
+          <div
+            aria-hidden
+            className="absolute inset-x-0 bottom-0 z-0 bg-uno-cream/45 backdrop-blur-2xl rounded-t-[26px] border-t border-white/45 shadow-[0_-10px_44px_rgba(43,42,39,0.18),inset_0_1px_0_rgba(255,255,255,0.55)]"
+            style={{ height: slabH }}
           />
-        </div>
 
-        {/* "You" avatar + label, overlapping the tray bottom. */}
-        <div className="absolute left-1/2 bottom-2 -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none">
-          <MyAvatar seat={mySeat} glow={isMyTurn} turnEndsAt={isMyTurn ? view.turnEndsAt : null} />
-          <span className="px-3 py-0.5 rounded-[10px] bg-uno-ink text-uno-cream text-[12px] font-extrabold leading-none shadow-[0_2px_5px_rgba(43,42,39,0.3)]">
-            You
-          </span>
+          {/* "You" avatar + label, riding ABOVE the fan (z-20 vs the hand's
+              z-10). Behind the cards it was swallowed whole — only the "You"
+              pill peeked out below the fan. `pointer-events-none` keeps every
+              card underneath it tappable. */}
+          <div className="absolute left-1/2 bottom-2 z-20 -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none">
+            <MyAvatar seat={mySeat} glow={isMyTurn} turnEndsAt={isMyTurn ? view.turnEndsAt : null} />
+            <span className="px-3 py-0.5 rounded-[10px] bg-uno-ink text-uno-cream text-[12px] font-extrabold leading-none shadow-[0_2px_5px_rgba(43,42,39,0.3)]">
+              You
+            </span>
+          </div>
+
+          <div className="relative z-10">
+            <MobileHand
+              cards={myHand}
+              vw={vw}
+              isPlayable={cardClickable}
+              isHighlighted={(c) => mustPlay && drawnUids.includes(c.uid)}
+              isSelected={(c) => selected.includes(c.uid)}
+              isHidden={(c) => flyingHandUids.has(c.uid)}
+              onPlay={onCardClick}
+            />
+          </div>
         </div>
       </div>
 
@@ -508,7 +553,11 @@ function MobileDrawPile({
   highlight?: boolean;
   onDraw: () => void;
 }) {
-  const W = 74;
+  // Slightly narrower than it used to be: the pile now hangs off the LEFT of a
+  // centred discard fan (rather than sharing a seam with it), so it has to clear
+  // the side seats on a 360px phone.
+  const W = 66;
+  const h = cardH(W);
   const layers = Math.min(3, Math.max(1, Math.ceil(count / 8)));
   return (
     <button
@@ -516,7 +565,7 @@ function MobileDrawPile({
       onClick={() => canDraw && onDraw()}
       disabled={!canDraw}
       data-draw
-      style={{ width: W, height: Math.round((W * 3) / 2) }}
+      style={{ width: W, height: h }}
       className={`group relative shrink-0 transition-transform duration-200 ${
         canDraw ? "active:translate-y-[2px]" : ""
       } ${highlight ? "draw-hint" : ""}`}
@@ -531,7 +580,7 @@ function MobileDrawPile({
         <span
           aria-hidden
           className="draw-hint-halo absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 -z-10 rounded-[16px] pointer-events-none"
-          style={{ width: W + 18, height: Math.round((W * 3) / 2) + 18 }}
+          style={{ width: W + 18, height: h + 18 }}
         />
       )}
       {Array.from({ length: layers }).map((_, i) => {
@@ -557,47 +606,94 @@ function MobileDrawPile({
 
 /* ---------------------------------------------------------- Discard pile --- */
 
+// Fan offsets for the recently played cards, indexed by depth below the top card
+// (0 = the card just under the top). Desktop's STACK_OFFSETS scaled by this
+// pile's width (90 vs 150). Earlier plays peek out from beneath so their colors
+// stay visible — a blue 4 still reads once a red 4 lands on it.
+const MOBILE_STACK_OFFSETS: { x: number; y: number; rot: number }[] = [
+  { x: -16, y: 5, rot: -17 },
+  { x: 14, y: 8, rot: 11 },
+  { x: -4, y: -4, rot: 4 },
+];
+
 function MobileDiscard({
   top,
+  recent,
   activeColor,
   drop = true,
   hideTopUid = null,
 }: {
   top: Card | null;
+  recent?: Card[];
   activeColor: Color | null;
   drop?: boolean;
   hideTopUid?: string | null;
 }) {
   const W = 90;
-  const h = Math.round((W * 3) / 2);
-  const hidden = !!top && top.uid === hideTopUid;
+  const h = cardH(W);
 
-  return (
-    <div data-discard className="relative shrink-0" style={{ width: W, height: h }}>
-      {top ? (
-        <div
-          className={`absolute inset-0 card-shadow-lg ${drop && !hidden ? "animate-card-drop" : ""}`}
-          style={{
-            visibility: hidden ? "hidden" : "visible",
-            transform: "rotate(-6deg)",
-          }}
-        >
-          <CardFace card={top} width={W} />
-          {isWild(top.value) && activeColor && (
-            <span
-              className="absolute left-1/2 -bottom-3 -translate-x-1/2 grid place-items-center w-8 h-8 rounded-full bg-uno-cream border-2 border-uno-ink/15 shadow-[0_3px_8px_rgba(43,42,39,0.35)]"
-              style={{ zIndex: 2 }}
-            >
-              <span className="w-5 h-5 rounded-full" style={{ background: swatch[activeColor] }} />
-            </span>
-          )}
-        </div>
-      ) : (
+  // One identity-stable stack keyed by uid (as on desktop): when a new card
+  // lands, the earlier cards keep their DOM elements and only change slot, so
+  // they *glide* out from under the top card instead of snapping into place.
+  const cards = recent?.length ? recent : top ? [top] : [];
+  const lastIdx = cards.length - 1;
+
+  if (!cards.length) {
+    return (
+      <div data-discard className="relative shrink-0" style={{ width: W, height: h }}>
         <div
           className="absolute inset-0 rounded-[12px] border-2 border-dashed border-uno-ink/20"
           aria-hidden
         />
-      )}
+      </div>
+    );
+  }
+
+  return (
+    // Oversized box so the ±16px fan and its rotation have room to sit in.
+    <div data-discard className="relative shrink-0" style={{ width: W + 36, height: h + 20 }}>
+      {cards.map((card, i) => {
+        const depth = lastIdx - i; // 0 = current top card
+        const isTop = depth === 0;
+        const o = isTop
+          ? { x: 0, y: 0, rot: -6 }
+          : MOBILE_STACK_OFFSETS[depth - 1] ??
+            MOBILE_STACK_OFFSETS[MOBILE_STACK_OFFSETS.length - 1];
+        const hidden = isTop && card.uid === hideTopUid;
+        return (
+          <div
+            key={card.uid}
+            className={`absolute left-1/2 top-1/2 ${isTop ? "card-shadow-lg" : "card-shadow-sm"} ${
+              isTop && drop && !hidden ? "animate-card-drop" : ""
+            }`}
+            style={
+              {
+                // Centred via negative margins, not translate, so `transform`
+                // stays free to carry the fan offset (and animate it).
+                marginLeft: -W / 2,
+                marginTop: -h / 2,
+                zIndex: 20 - depth,
+                visibility: hidden ? "hidden" : "visible",
+                transform: `translate(${o.x}px, ${o.y}px) rotate(${o.rot}deg)`,
+                transition: "transform 480ms cubic-bezier(0.22,1,0.36,1)",
+                // Feeds @keyframes card-drop so the landing animation preserves
+                // this card's own tilt instead of snapping from 0deg.
+                "--rot": `${o.rot}deg`,
+              } as React.CSSProperties
+            }
+          >
+            <CardFace card={card} width={W} />
+            {isTop && isWild(card.value) && activeColor && (
+              <span
+                className="absolute left-1/2 -bottom-3 -translate-x-1/2 grid place-items-center w-8 h-8 rounded-full bg-uno-cream border-2 border-uno-ink/15 shadow-[0_3px_8px_rgba(43,42,39,0.35)]"
+                style={{ zIndex: 2 }}
+              >
+                <span className="w-5 h-5 rounded-full" style={{ background: swatch[activeColor] }} />
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -635,10 +731,14 @@ function MobileArrows({
     return { d, head };
   };
 
-  // The two arcs are exact mirrors across the vertical axis so the rig reads
-  // symmetric around the pile (θ ↔ 180−θ): right spans −52°→40°, left 140°→232°.
-  const right = arrow(-52, 40);
-  const left = arrow(140, 232);
+  // Short arcs at 12 and 6 o'clock. Flanking the pile left/right (the old
+  // −52°→40° / 140°→232° pair) crowded it on a phone: the arcs ran alongside the
+  // draw pile and the discard fan and read as clutter. Above and below there's
+  // dead space, and a 64° span is enough to convey the direction. The two are
+  // exact mirrors (θ ↔ −θ) so the rig stays symmetric; scaleX still flips which
+  // way the heads point on a reverse.
+  const top = arrow(-122, -58);
+  const bottom = arrow(58, 122);
 
   return (
     <div
@@ -652,10 +752,10 @@ function MobileArrows({
       }}
     >
       <svg viewBox="0 0 400 400" className="w-full h-full" fill="none">
-        <path d={right.d} stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
-        <path d={right.head} fill="currentColor" />
-        <path d={left.d} stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
-        <path d={left.head} fill="currentColor" />
+        <path d={top.d} stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
+        <path d={top.head} fill="currentColor" />
+        <path d={bottom.d} stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
+        <path d={bottom.head} fill="currentColor" />
       </svg>
     </div>
   );
@@ -803,6 +903,125 @@ function MobileSeat({
 
 const JITTER = [0.9, -1.4, 0.5, -0.7, 1.2, -0.4, 0.8, -1.1];
 
+/* ------------------------------------------------------- Hand inertia ---
+   Native horizontal scrolling in the tray stopped dead the instant a finger
+   lifted, which made a big hand feel like a filmstrip being yanked. This adds
+   a weighted flick: the drag drives `scrollLeft` directly, and on release the
+   remaining velocity decays over a rAF loop so the fan coasts to a stop.
+
+   Same eased-value idiom as the landing hero's pointer parallax
+   (src/app/page.tsx) — no animation library, per CLAUDE.md §5. */
+
+/** Movement past this (px) is a swipe, not a tap; below it, card clicks pass. */
+const DRAG_SLOP = 6;
+/** Per-frame velocity decay. Higher = longer coast. */
+const FRICTION = 0.94;
+
+function useHandInertia(ref: React.RefObject<HTMLDivElement | null>) {
+  const start = useRef({ x: 0, scroll: 0 });
+  const active = useRef(false);
+  const dragged = useRef(false);
+  const velocity = useRef(0);
+  const lastX = useRef(0);
+  const lastT = useRef(0);
+  const raf = useRef<number | null>(null);
+  // State, not a ref: it also decides `touch-action` below, which has to be
+  // rendered. Opting out must hand horizontal panning back to the browser.
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    setReduced(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    return () => {
+      if (raf.current != null) cancelAnimationFrame(raf.current);
+    };
+  }, []);
+
+  const stopCoast = () => {
+    if (raf.current != null) cancelAnimationFrame(raf.current);
+    raf.current = null;
+  };
+
+  const coast = () => {
+    const el = ref.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    const next = el.scrollLeft - velocity.current;
+    // Clamping ends the glide at either edge instead of grinding against it.
+    if (next <= 0 || next >= max) {
+      el.scrollLeft = Math.max(0, Math.min(max, next));
+      raf.current = null;
+      return;
+    }
+    el.scrollLeft = next;
+    velocity.current *= FRICTION;
+    raf.current =
+      Math.abs(velocity.current) < 0.1 ? null : requestAnimationFrame(coast);
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Always clear first: a mouse gesture that bails out below must not leave a
+    // stale "that was a drag" flag behind to swallow the next card click.
+    dragged.current = false;
+    if (reduced || e.pointerType === "mouse") return;
+    const el = ref.current;
+    if (!el) return;
+    stopCoast();
+    active.current = true;
+    velocity.current = 0;
+    start.current = { x: e.clientX, scroll: el.scrollLeft };
+    lastX.current = e.clientX;
+    lastT.current = e.timeStamp;
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!active.current) return;
+    const el = ref.current;
+    if (!el) return;
+
+    const dx = e.clientX - start.current.x;
+    if (!dragged.current) {
+      if (Math.abs(dx) < DRAG_SLOP) return;
+      dragged.current = true;
+      // Only claim the pointer once it's clearly a swipe, so a plain tap still
+      // reaches the card underneath.
+      el.setPointerCapture?.(e.pointerId);
+    }
+
+    const max = el.scrollWidth - el.clientWidth;
+    el.scrollLeft = Math.max(0, Math.min(max, start.current.scroll - dx));
+
+    // Exponential moving average — a single jittery frame can't fling the fan.
+    const dt = e.timeStamp - lastT.current;
+    if (dt > 0) {
+      const v = (e.clientX - lastX.current) / dt; // px per ms
+      velocity.current = velocity.current * 0.7 + v * 16 * 0.3; // → px per frame
+    }
+    lastX.current = e.clientX;
+    lastT.current = e.timeStamp;
+  };
+
+  const onPointerUp = () => {
+    if (!active.current) return;
+    active.current = false;
+    if (dragged.current && Math.abs(velocity.current) > 0.4) {
+      raf.current = requestAnimationFrame(coast);
+    }
+  };
+
+  return {
+    /** True if the gesture that just ended was a swipe — suppress the click. */
+    wasDrag: () => dragged.current,
+    /** `pan-y` while we drive the axis ourselves; hand it back when opted out. */
+    touchAction: reduced ? "pan-x" : "pan-y",
+    handlers: {
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+      onPointerCancel: onPointerUp,
+    },
+  };
+}
+
 function MobileHand({
   cards,
   vw,
@@ -821,29 +1040,32 @@ function MobileHand({
   onPlay: (c: Card) => void;
 }) {
   const n = cards.length;
-  // Card width scales gently with the viewport so it stays readable on any
-  // phone. Crucially the cards keep this size no matter how many there are —
-  // when the fan is wider than the screen the tray turns into a horizontal
-  // carousel the player can swipe, rather than crushing the cards to slivers.
-  const W = Math.round(Math.max(54, Math.min(72, vw * 0.19)));
-  const h = Math.round((W * 3) / 2);
+  const W = handCardW(vw);
+  const h = cardH(W);
 
-  // Vertical room reserved above/below the card baseline for the arc + the
-  // lift on playable/selected cards, so nothing is clipped by the scroller.
-  const LIFT_UP = 44; // max a card rises (playable + selected, center) + headroom
-  const DROP = 16; // max the fan's edges dip below the baseline
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const centeredOnce = useRef(false);
 
   // Keep the fan centred in the tray: on mount / resize / hand-size change, park
   // the scroll position in the middle so the centre cards sit under the screen
   // centre and the player can swipe either way to reach the ends — rather than
   // the fan being pinned to the left edge with the far cards stranded off-screen
-  // and untappable.
-  const scrollerRef = useRef<HTMLDivElement>(null);
+  // and untappable. The very first placement is instant (there's nothing to
+  // animate from); later ones glide, so drawing a card nudges the fan rather
+  // than teleporting it.
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2);
+    const left = Math.max(0, (el.scrollWidth - el.clientWidth) / 2);
+    if (centeredOnce.current) {
+      el.scrollTo({ left, behavior: "smooth" });
+    } else {
+      el.scrollLeft = left;
+      centeredOnce.current = true;
+    }
   }, [n, vw]);
+
+  const drag = useHandInertia(scrollerRef);
 
   if (n === 0) {
     return (
@@ -868,7 +1090,10 @@ function MobileHand({
     <div
       ref={scrollerRef}
       className="no-scrollbar w-full overflow-x-auto overflow-y-hidden overscroll-x-contain"
-      style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-x" }}
+      // `pan-y` (not `pan-x`) while the inertia layer drives the axis itself —
+      // leaving the browser's own horizontal pan on would fight it.
+      style={{ WebkitOverflowScrolling: "touch", touchAction: drag.touchAction }}
+      {...drag.handlers}
     >
       <div
         className="relative mx-auto"
@@ -915,7 +1140,11 @@ function MobileHand({
                 width={W}
                 playable={canPlayIt}
                 highlight={isHighlighted(card) || selected}
-                onClick={() => onPlay(card)}
+                // A swipe that happens to end on a card must not also play it.
+                onClick={() => {
+                  if (drag.wasDrag()) return;
+                  onPlay(card);
+                }}
               />
             </div>
           );

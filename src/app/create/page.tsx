@@ -3,12 +3,35 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { DEFAULT_CONFIG, RuleConfig } from "../../engine/types";
-import { randomRoomCode, stashCreate } from "../../lib/identity";
+import {
+  loadDraftConfig,
+  randomRoomCode,
+  saveDraftConfig,
+  stashCreate,
+} from "../../lib/identity";
 import { usePlaySound } from "../../hooks/use-play-sound";
 
 export default function CreatePage() {
   const router = useRouter();
   const [config, setConfig] = useState<RuleConfig>({ ...DEFAULT_CONFIG });
+
+  // The saved draft is read on mount, not in the state initializer: localStorage
+  // doesn't exist during SSR, so seeding from it there would hydrate a different
+  // tree than the server rendered. Spreading over DEFAULT_CONFIG means a draft
+  // written before a new rule existed still picks up that rule's default.
+  const hydrated = useRef(false);
+  useEffect(() => {
+    const saved = loadDraftConfig();
+    if (saved) setConfig((c) => ({ ...c, ...saved }));
+    hydrated.current = true;
+  }, []);
+
+  // Persist every change — but only after the load above has run, or the first
+  // render would overwrite the stored draft with the defaults.
+  useEffect(() => {
+    if (!hydrated.current) return;
+    saveDraftConfig(config);
+  }, [config]);
 
   const set = <K extends keyof RuleConfig>(k: K, v: RuleConfig[K]) =>
     setConfig((c) => ({ ...c, [k]: v }));
@@ -122,22 +145,26 @@ export default function CreatePage() {
           )}
         </div>
 
-        <button
-          onClick={create}
-          className="w-full mt-8 bg-uno-red text-uno-cream font-extrabold uppercase tracking-wide py-3.5 rounded-card border-2 border-uno-ink/15 shadow-[0_5px_0_rgba(43,42,39,0.25)] hover:-translate-y-0.5 hover:brightness-[1.04] hover:shadow-[0_7px_0_rgba(43,42,39,0.25)] active:translate-y-[3px] active:shadow-none transition"
-        >
-          Create &amp; Open Lobby
-        </button>
-        <button
-          onClick={() => {
-            backSfx.play();
-            router.push("/");
-          }}
-          className="group w-full mt-3 flex items-center justify-center gap-1.5 text-uno-ink1 hover:text-uno-ink text-sm font-semibold py-2 transition-colors"
-        >
-          <ArrowLeft className="transition-transform group-hover:-translate-x-0.5" />
-          Back
-        </button>
+        {/* One row so the two actions share a baseline, height and radius —
+            Back is a real secondary button, not a stray text link. */}
+        <div className="flex items-stretch gap-3 mt-8">
+          <button
+            onClick={() => {
+              backSfx.play();
+              router.push("/");
+            }}
+            className="group shrink-0 flex items-center justify-center gap-1.5 bg-uno-cream text-uno-ink font-extrabold uppercase tracking-wide px-5 py-3.5 rounded-card border-2 border-uno-ink/15 shadow-[0_5px_0_rgba(43,42,39,0.22)] hover:-translate-y-0.5 hover:bg-uno-white2 hover:shadow-[0_7px_0_rgba(43,42,39,0.22)] active:translate-y-[3px] active:shadow-none transition"
+          >
+            <ArrowLeft className="transition-transform group-hover:-translate-x-0.5" />
+            Back
+          </button>
+          <button
+            onClick={create}
+            className="flex-1 bg-uno-red text-uno-cream font-extrabold uppercase tracking-wide py-3.5 rounded-card border-2 border-uno-ink/15 shadow-[0_5px_0_rgba(43,42,39,0.25)] hover:-translate-y-0.5 hover:brightness-[1.04] hover:shadow-[0_7px_0_rgba(43,42,39,0.25)] active:translate-y-[3px] active:shadow-none transition"
+          >
+            Create &amp; Open Lobby
+          </button>
+        </div>
       </div>
     </main>
   );

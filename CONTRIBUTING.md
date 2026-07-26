@@ -22,11 +22,24 @@ src/engine/            Pure, unit-tested game engine (no networking, no React) �
 src/shared/protocol.ts Zod message schemas + client/server message types
 src/store/gameStore.ts Zustand store (personalized view + toasts)
 src/hooks/useRoom.ts   PartySocket connection: rejoin-first-then-join
+src/hooks/useIsPhone.ts The ONE phone/desktop seam (viewport ≤ 500px)
 src/lib/               identity (localStorage), avatars, assets/preload, env flags
 src/app/               Routes: landing, /create, /room/[code], /demo (dev-only)
-src/components/        Lobby, GameTable, Card/Hand, ColorPicker, RoundEnd, Toasts, ...
+src/components/        Lobby, GameTable, MobileGameTable, HeroScene, RoundEnd, Toasts, ...
 public/                Served assets (card art, fonts, avatars, backgrounds)
 ```
+
+### Desktop and phone are separate trees
+
+`GameTable` (desktop) and `MobileGameTable` (phone) **duplicate the game logic
+verbatim**. That's deliberate isolation: the desktop table is finished, and a
+mobile styling change must not be able to reach it. The cost is that a real
+*game-logic* fix has to be made in **both**. The landing hero and the end
+screens instead share one component (`HeroScene.tsx`) with two compositions.
+
+**Read [`CLAUDE.md`](CLAUDE.md) before touching any layout or CSS** — it has the
+breakpoint rules, the card-sizing constraints, and a list of files that must not
+change visually without approval.
 
 ### Architecture in one paragraph
 
@@ -44,8 +57,8 @@ transports over the same engine, so a rule change is made once and both get it.
 - **Game logic** lives in `src/engine/`. It's pure and covered by
   `engine.test.ts` — add/adjust tests for any rule change.
 - **New client→server actions** must be added to the Zod schema in
-  `src/shared/protocol.ts` **and** handled in `party/server.ts`. Never trust the
-  client — validate on the server.
+  `src/shared/protocol.ts` **and** handled in `server/index.ts` (the deployed
+  server). Never trust the client — validate on the server.
 - **Images** render through the shared `<Card>` component (`src/components/ui/Card.tsx`),
   not raw `next/image`. Card faces/backs go through `CardFace` / `CardBack`.
 - **Styling** is Tailwind v4 (CSS-first, configured in `src/app/globals.css`).
@@ -66,6 +79,8 @@ npx next build        # production build succeeds
 
 If your change is visual or gameplay-facing, verify it end-to-end by running the
 app and playing through the affected flow (two browser windows for multiplayer).
+**Check both layouts** if you touched shared UI: desktop, and a phone viewport
+(≤500px — DevTools device emulation, or `/demo/mobile-2` and `/demo/mobile-4`).
 
 ## Pull request guidelines
 
@@ -82,8 +97,18 @@ app and playing through the affected flow (two browser windows for multiplayer).
 Write imperative, descriptive messages, e.g. `Add draw-until-playable option to
 create form`. Group related work into logical commits rather than one giant blob.
 
-## Scope reminder (v1 non-goals)
+## Scope reminder (non-goals)
 
-Per `UNO_PRD.md`, these are intentionally out of scope for now: spectators,
-jump-in / 7-0 rules, accounts, chat, cross-session persistence, and mobile
-responsiveness. If you want to tackle one, open an issue to discuss first.
+Per `UNO_PRD.md`, these are intentionally out of scope: spectators, jump-in /
+7-0 rules, accounts, chat, and cross-session persistence. If you want to tackle
+one, open an issue to discuss first.
+
+*(Mobile responsiveness was a v1 non-goal and shipped in v2 — see the
+[changelog](CHANGELOG.md).)*
+
+## One design-system gotcha
+
+**Vodka Sans (`font-display`) has letters only** — no digits, no punctuation.
+Anything rendered in it must be A–Z, or it comes out as tofu. This is why room
+codes are letters-only and why the win screen reads `WINS`, not `WINS!`. Use
+`font-body` (Switzer) for anything with numbers or symbols.

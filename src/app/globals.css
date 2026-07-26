@@ -535,6 +535,136 @@ textarea,
   }
 }
 
+/* ------------------------------------------------------- Win screen ---
+   Entrance choreography for the round/match end screen (RoundEnd.tsx). Every
+   piece used to pop in on the same frame, which read as a jump cut; these stage
+   it — panel first, then the crown dropping onto it, the card sliding out from
+   under, the scoreboard rows, and the button last.
+
+   All new names (`win-*`), additive: nothing here touches the shared primitives
+   the desktop table depends on. Each element sets its own animation-delay
+   inline, with `backwards` fill so it stays hidden until its turn. */
+
+/* The focal panel: rises and settles with a soft overshoot. */
+@keyframes win-panel-in {
+  0% {
+    opacity: 0;
+    transform: translateY(26px) scale(0.86);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(0) scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.win-panel {
+  animation: win-panel-in 620ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* The crown drops in from above and bounces once as it lands on the panel. */
+@keyframes win-crown-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -180%) rotate(-16deg);
+  }
+  55% {
+    opacity: 1;
+    transform: translate(-50%, 8%) rotate(4deg);
+  }
+  78% {
+    transform: translate(-50%, -6%) rotate(-2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) rotate(0deg);
+  }
+}
+/* `both` for the same reason as .win-card: the final keyframe carries the
+   translate(-50%) that centers the crown on the panel. */
+.win-crown {
+  animation: win-crown-in 760ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+/* Text lines lift in under the panel's own entrance. */
+@keyframes win-line-in {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.win-line {
+  animation: win-line-in 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* The wild +4 slides out from behind the panel and settles at its tilt. */
+@keyframes win-card-in {
+  0% {
+    opacity: 0;
+    transform: translate(-38%, -30%) rotate(-24deg) scale(0.7);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(12deg) scale(1);
+  }
+}
+/* `both`, not `backwards`: the resting 12° tilt IS the last keyframe, so the
+   fill has to hold it after the animation ends. */
+.win-card {
+  animation: win-card-in 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Scoreboard rows and the continue pill. */
+@keyframes win-rise-in {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.win-rise {
+  animation: win-rise-in 500ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* The backdrop art itself eases up so the whole screen arrives together. */
+@keyframes win-backdrop-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.win-backdrop {
+  animation: win-backdrop-in 700ms ease-out backwards;
+}
+
+/* Reduced motion: keep the staging, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .win-panel,
+  .win-crown,
+  .win-line,
+  .win-card,
+  .win-rise,
+  .win-backdrop {
+    animation-name: win-backdrop-in;
+    animation-duration: 260ms;
+  }
+  /* The crown is centered by its own transform, which the fade must not drop. */
+  .win-crown {
+    transform: translate(-50%, 0);
+  }
+}
+
 /* ---------------------------------------------------- Rotate prompt ---
    The phone experience is portrait-only. On a phone turned to landscape we
    overlay a "rotate to portrait" notice. Hidden by default; shown only on

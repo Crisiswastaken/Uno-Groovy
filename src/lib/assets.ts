@@ -23,10 +23,24 @@ const CARD_ASSETS: string[] = [
   "/cards/back.png",
 ];
 
+// The landing hero (src/app/page.tsx). These are the heaviest assets in the app
+// — rainbow.png alone is ~950KB — and the splash exists precisely so they're in
+// cache before the hero paints; leaving them out made the intro finish and the
+// hero then pop in piece by piece.
 const HOME_ASSETS = [
+  "/home-new/rainbow.png",
+  "/home-new/uno.png",
+  "/home-new/sparkles.png",
+  "/home-new/cloud-left.png",
+  "/home-new/cloud-right.png",
+  "/home-new/bottle.png",
+  "/home-new/sunflower.png",
+  "/home-new/pencil.png",
+  "/home-new/apple.png",
+  "/home-new/plus4.png",
+  "/home-new/ship.png",
+  // Still live: the lobby backdrop and the rotate-prompt wordmark.
   "/home/background.png",
-  "/home/plus4.png",
-  "/home/uno-back.png",
   "/home/uno-wordmark.png",
 ];
 

@@ -9,8 +9,8 @@ production deployment (Render + Vercel), see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 - **Node.js 20+** and **npm** — check with `node -v`.
 - **Git**.
-- A modern desktop browser (the game is **desktop-only** for now — see the note
-  at the bottom).
+- A modern browser. Desktop and phones are both supported (see
+  [testing the phone layout](#8-testing-the-phone-layout)).
 
 ## 2. Install
 
@@ -141,8 +141,18 @@ a remote friend and you don't want to deploy → **C**.
 
 ---
 
-## Note: desktop only
+## 8. Testing the phone layout
 
-The game is desktop-first and **not responsive yet**. On phones and small touch
-screens it shows a "Desktop only" notice instead of the (broken) table. This is a
-deliberate v1 restriction — see `src/components/MobileGate.tsx`.
+Phones are a **separate component tree**, not a reflowed desktop one, so they
+need testing on their own.
+
+- The switch is **viewport width ≤ 500px** (`src/hooks/useIsPhone.ts`). In
+  Chrome DevTools, toggle device emulation and pick any phone preset — 390×844
+  is a good default, 360×640 is the tight case worth checking.
+- **Portrait only.** A phone in landscape gets a "rotate to portrait" overlay
+  (`.rotate-prompt` in `globals.css`); that's intentional, not a bug.
+- To play on a real phone on your network, use the LAN instructions in §6B — the
+  phone just opens the same `http://<your-ip>:3000`.
+- `/demo/mobile-2` and `/demo/mobile-4` render the phone table in a 390×844
+  frame on a desktop browser, which is the fastest way to iterate on it. These
+  routes are dev-only and 404 in production.

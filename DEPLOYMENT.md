@@ -114,17 +114,22 @@ setting it.
 
 ---
 
-## Operational notes (v1 scope)
+## Operational notes
 
 - **State is in memory.** Each room lives in the server process's memory. A player
   dropping is covered by rejoin; a **server restart or free-tier sleep** drops any
   in-progress game. There is no database by design (see `UNO_PRD.md`).
-- **Disconnect grace:** a disconnected player's turn auto-passes after 30s
-  (`DISCONNECT_GRACE_MS` in `server/index.ts`).
-- **Room cleanup:** rooms with no live connections are swept from memory after
-  30 minutes.
-- **Rooms are ephemeral**, keyed only by the 6-char code — no accounts, no
-  persistence, no spectators (all v1 non-goals).
+- **Turn clock:** every turn auto-passes after 30s (`TURN_TIMEOUT_MS` in
+  `server/index.ts`), which covers idlers and disconnected players alike. It is
+  **parked while a room has no live connections**, so a table everyone briefly
+  dropped from doesn't burn turns while nobody is watching.
+- **Room lifecycle:** a room is allocated on the first `joinRoom` message, not on
+  socket connect, so opening sockets can't mint rooms. Rooms with no live
+  connections are swept after 10 minutes (`EMPTY_ROOM_TTL_MS`), on a 30s sweep.
+- **Room codes** are validated at the WebSocket upgrade: 4–8 **letters** only.
+  Anything else is refused, so a malformed path never reaches room allocation.
+- **Rooms are ephemeral**, keyed only by the 6-letter code — no accounts, no
+  persistence, no spectators.
 
 ## Other hosts
 

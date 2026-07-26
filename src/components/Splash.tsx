@@ -97,9 +97,19 @@ export function Splash({ children }: { children: React.ReactNode }) {
     }
 
     setStatus("exiting");
+  }, [status, videoEnded, assetsReady]);
+
+  // Finish the exit once the zoom-blur has played out. This MUST be its own
+  // effect, scoped to "exiting": scheduling it alongside setStatus("exiting")
+  // meant the status change immediately tore that effect down and its cleanup
+  // cleared the very timer that reveals the app — the splash stayed "exiting"
+  // forever, and with it the document-level `overflow: hidden` below, so no
+  // page could ever scroll for the rest of the session.
+  useEffect(() => {
+    if (status !== "exiting") return;
     const t = setTimeout(() => setStatus("done"), EXIT_MS);
     return () => clearTimeout(t);
-  }, [status, videoEnded, assetsReady]);
+  }, [status]);
 
   return (
     <>

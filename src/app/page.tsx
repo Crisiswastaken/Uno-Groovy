@@ -2,36 +2,34 @@
 
 import { useRouter } from "next/navigation";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
-import { Card } from "../components/ui/Card";
-import { setName } from "../lib/identity";
+import { normalizeRoomCode, setName } from "../lib/identity";
 import { usePlaySound } from "../hooks/use-play-sound";
+import { useIsPhone } from "../hooks/useIsPhone";
+import { HeroBackdrop, HERO_PORTRAIT_RATIO, HERO_RATIO } from "../components/HeroScene";
 
 /**
- * Redesigned landing hero.
+ * The landing hero: the shared <HeroBackdrop /> art composition (see
+ * HeroScene.tsx — it also backs the round/match end screens) plus this page's
+ * own chrome, the PLAY pill and the create/join popup.
  *
- * The whole composition is authored against a 3132×1762 background, so every
- * element is sized and placed as a fraction of that canvas — never in absolute
- * pixels. A single "scene" container reproduces the background's aspect ratio
- * and is scaled to cover the viewport; the custom unit `--u` (1% of the scene's
- * width) lets non-image chrome (the PLAY pill, the red bar) scale with it too.
- * The result holds its proportions identically at every screen size.
- *
- * Layers (cream field → rainbow → cut-outs → sparkles on top) each parallax off
- * the pointer at their own depth, and the pointer itself is eased every frame so
- * the scene trails the cursor with a soft, elegant lag rather than snapping.
+ * Both compositions are authored against a fixed canvas and cover-scaled, with
+ * the custom unit `--u` (1% of the scene's width) letting non-image chrome scale
+ * with the art. On desktop the pointer is eased every frame so the scene trails
+ * the cursor with a soft lag rather than snapping.
  */
 
-// Background canvas the design was authored against.
-const BG_W = 3132;
-const BG_H = 1762;
-const RATIO = BG_W / BG_H; // ~1.7775
-const RATIO_INV = BG_H / BG_W; // ~0.56258
+/** Scene units per vw for the PLAY pill — 15.326u wide ⇒ ~55% of the screen. */
+const PILL_U = 3.6;
 
 export default function Landing() {
   const router = useRouter();
   const [code, setCode] = useState("");
   const [name, setNameInput] = useState("");
   const [popup, setPopup] = useState<null | "choose" | "join">(null);
+  // Phones get a purpose-built portrait composition instead of the 16:9 scene
+  // below — see LandingPortrait. SSR-safe (false first render), same contract
+  // RoomClient uses to pick the mobile table.
+  const isPhone = useIsPhone();
 
   // Soft tick on hover, a satisfying pop on press — the whole app shares one
   // sensory-ui engine (arcade theme), configured in the root layout provider.
@@ -87,11 +85,38 @@ export default function Landing() {
   };
 
   const join = () => {
-    const c = code.trim().toUpperCase();
+    const c = normalizeRoomCode(code);
     if (c.length < 4 || !name.trim()) return;
     setName(c, name.trim());
     router.push(`/room/${c}`);
   };
+
+  // The popup is identical on both layouts (fixed, self-centering), so it's
+  // hoisted out of the two scene trees.
+  const popupEl = popup && (
+    <Popup
+      mode={popup}
+      onClose={() => setPopup(null)}
+      onCreate={() => router.push("/create")}
+      onJoinMode={() => setPopup("join")}
+      name={name}
+      code={code}
+      setName={setNameInput}
+      setCode={setCode}
+      join={join}
+      playHover={playHover}
+      playPress={playPress}
+    />
+  );
+
+  if (isPhone) {
+    return (
+      <>
+        <LandingPortrait onPlay={openPopup} onHover={playHover} />
+        {popupEl}
+      </>
+    );
+  }
 
   return (
     <main
@@ -99,63 +124,19 @@ export default function Landing() {
       className="relative min-h-screen w-full overflow-hidden"
       style={
         {
-          backgroundColor: "#f8eadb",
-          // 1u = 1% of the scene's width, so everything scales with the scene.
-          "--u": `max(1vw, ${RATIO}vh)`,
+          // 1u = 1% of the scene's width, so the PLAY pill scales with the art.
+          // (The backdrop sets the same unit on itself; each is self-contained.)
+          "--u": `max(1vw, ${HERO_RATIO}vh)`,
         } as CSSProperties
       }
     >
-      {/* Scene: the background canvas' aspect ratio, scaled to cover the
-          viewport and centered. All art lives inside, positioned in % so the
-          layout is identical at any size. */}
-      <div
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 select-none"
-        style={{ width: "calc(var(--u) * 100)", height: `calc(var(--u) * ${100 * RATIO_INV})` }}
-      >
-        {/* Rainbow — the full-canvas backdrop art (fills the scene exactly). */}
-        <Layer src="/home-new/rainbow.png" w={100} h={100} cx={50} cy={50} depth={6} z={0} pointer={pointer} fit="cover" shadow={false} />
-
-        {/* Scattered cut-outs, each sized W/3132 × H/1762 and given its own
-            depth + idle float so nothing moves in lockstep. */}
-        <Layer src="/home-new/cloud-left.png" w={26.79} h={16.12} cx={5} cy={16} depth={12} rot={0} float={1.0} dur={7.5} delay={0.2} z={2} pointer={pointer} />
-        <Layer src="/home-new/cloud-right.png" w={36.21} h={26.11} cx={88} cy={44} depth={16} rot={0} float={1.3} dur={8.4} delay={1.1} z={2} pointer={pointer} />
-        <Layer src="/home-new/bottle.png" w={7.44} h={19.35} cx={9.5} cy={55} depth={20} rot={-4} float={1.4} dur={6.8} delay={0.9} z={3} pointer={pointer} />
-        <Layer src="/home-new/sunflower.png" w={15.87} h={35.87} cx={86} cy={82} depth={15} rot={2} float={1.2} dur={7.9} delay={0.1} z={3} pointer={pointer} />
-        <Layer src="/home-new/pencil.png" w={5.97} h={9.65} cx={34.5} cy={86} depth={24} rot={0} float={1.1} dur={7.1} delay={0.7} z={4} pointer={pointer} />
-        <Layer src="/home-new/apple.png" w={4.92} h={9.53} cx={69.5} cy={71} depth={28} rot={5} float={1.3} dur={6.5} delay={1.4} z={4} pointer={pointer} />
-        <Layer src="/home-new/plus4.png" w={9.74} h={22.42} cx={25.5} cy={37} depth={32} rot={-7} float={1.5} dur={6.2} delay={0.5} z={5} pointer={pointer} />
-        <Layer src="/home-new/ship.png" w={11.85} h={26.73} cx={8.5} cy={84} depth={36} rot={-3} float={1.6} dur={5.8} delay={0.3} z={5} pointer={pointer} />
-
-        {/* UNO wordmark — the scene anchor, so it drifts the least. */}
-        <Layer src="/home-new/uno.png" w={35.44} h={27.81} cx={50.5} cy={48} depth={9} rot={0} float={0.7} dur={9} delay={0.6} z={6} pointer={pointer} shadow={false} />
-
-        {/* Sparkles — the topmost art layer (above every other element). */}
-        <Layer src="/home-new/sparkles.png" w={77.33} h={82.18} cx={50} cy={50} depth={42} rot={0} float={0.6} dur={10} delay={0} z={8} pointer={pointer} shadow={false} />
-      </div>
-
-      {/* Solid red top bar — the main shade of red (uno-red), pinned to the
-          viewport top so it reads as a bar on every aspect ratio. */}
-      <div className="absolute inset-x-0 top-0 bg-uno-red z-40 select-none pointer-events-none" style={{ height: "calc(var(--u) * 1.8)" }} />
+      <HeroBackdrop pointer={pointer} />
 
       {/* PLAY pill — a custom control (no asset), sized 480×125 relative to the
           canvas via --u. Opens the create/join popup. */}
       <PlayButton depth={14} pointer={pointer} onHover={playHover} onClick={openPopup} />
 
-      {popup && (
-        <Popup
-          mode={popup}
-          onClose={() => setPopup(null)}
-          onCreate={() => router.push("/create")}
-          onJoinMode={() => setPopup("join")}
-          name={name}
-          code={code}
-          setName={setNameInput}
-          setCode={setCode}
-          join={join}
-          playHover={playHover}
-          playPress={playPress}
-        />
-      )}
+      {popupEl}
     </main>
   );
 }
@@ -163,84 +144,58 @@ export default function Landing() {
 /* -------------------------------------------------------------------------- */
 
 /**
- * One art layer. Nested transforms that never fight:
- *   1. outer — placement (cx/cy) + size (w/h, both % of the scene) + centering
- *   2. parallax — the pointer-driven shift, scaled by `depth` (px)
- *   3. tilt — the resting angle (`rot`)
- *   4. `.decor-float` — a slow idle bob (per-item dur/float/delay)
- * The image fills the box with `object-contain` (never distorted); box aspect
- * already matches the art, so it lands pixel-proportional to the background.
+ * The phone hero: the shared portrait backdrop plus the PLAY pill.
+ *
+ * The desktop scene is one 16:9 canvas cover-scaled to the viewport, which works
+ * beautifully on a landscape screen and falls apart on a portrait one: at
+ * 390×844 it renders ~1500px wide, so most of the composition — half the UNO
+ * wordmark included — sits outside the frame. HeroScene.tsx carries a separate
+ * portrait composition for phones; this only adds the button on top.
  */
-function Layer({
-  src,
-  w,
-  h,
-  cx,
-  cy,
-  depth,
-  z,
-  pointer,
-  rot = 0,
-  float = 0,
-  dur = 8,
-  delay = 0,
-  shadow = true,
-  fit = "contain",
+function LandingPortrait({
+  onPlay,
+  onHover,
 }: {
-  src: string;
-  w: number;
-  h: number;
-  cx: number;
-  cy: number;
-  depth: number;
-  z: number;
-  pointer: { x: number; y: number };
-  rot?: number;
-  float?: number;
-  dur?: number;
-  delay?: number;
-  shadow?: boolean;
-  fit?: "contain" | "cover";
+  onPlay: () => void;
+  onHover: () => void;
 }) {
   return (
-    <div
-      className="absolute pointer-events-none"
-      style={{ left: `${cx}%`, top: `${cy}%`, width: `${w}%`, height: `${h}%`, transform: "translate(-50%, -50%)", zIndex: z }}
-    >
+    <main className="fixed inset-0 overflow-hidden select-none">
+      <HeroBackdrop />
+
+      {/* PLAY — absent from the design, added here. Reuses the desktop pill
+          verbatim: it's authored entirely in `--u`, so redefining that unit
+          rescales it intact. The pill is 15.326u wide, so u = 3.6vw puts it at
+          ~55% of the screen; the `max()` keeps it locked to the scene when the
+          scene is height-driven. Sat at 64%, tucked just under the wordmark
+          (which ends at 57%) rather than down in the ship/sunflower row — at
+          full width and 73% it read as a detached bar stranded in the white
+          gap. */}
       <div
-        className="w-full h-full"
-        style={{
-          transform: `translate3d(${(-pointer.x * depth).toFixed(2)}px, ${(-pointer.y * depth).toFixed(2)}px, 0)`,
-          willChange: "transform",
-        }}
+        className="absolute inset-0 z-30 pointer-events-none"
+        style={
+          {
+            "--u": `max(${PILL_U}vw, ${(HERO_PORTRAIT_RATIO * PILL_U).toFixed(4)}vh)`,
+          } as CSSProperties
+        }
       >
-        <div className="w-full h-full" style={{ transform: `rotate(${rot}deg)` }}>
-          <div
-            className="decor-float relative w-full h-full"
-            style={
-              {
-                "--dur": `${dur}s`,
-                "--float": `calc(var(--u) * ${-float})`,
-                animationDelay: `${delay}s`,
-              } as CSSProperties
-            }
-          >
-            <Card
-              src={src}
-              alt=""
-              fill
-              rounded={false}
-              priority
-              sizes="100vw"
-              className={`${fit === "cover" ? "object-cover" : "object-contain"} ${shadow ? "decor-shadow" : ""}`}
-            />
-          </div>
+        {/* pointer-events is inherited, so this re-enables just the pill and
+            leaves the rest of the full-screen positioning layer click-through. */}
+        <div className="pointer-events-auto">
+          <PlayButton
+            depth={0}
+            pointer={{ x: 0, y: 0 }}
+            onHover={onHover}
+            onClick={onPlay}
+            top="64%"
+          />
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 
+/**
 /**
  * The custom PLAY pill: a cream capsule with a dark outline, the display-font
  * wordmark and an orange circle arrow. Sized 480×125 relative to the canvas
@@ -252,17 +207,20 @@ function PlayButton({
   pointer,
   onHover,
   onClick,
+  top = "72%",
 }: {
   depth: number;
   pointer: { x: number; y: number };
   onHover: () => void;
   onClick: () => void;
+  /** Vertical placement; the portrait layout sits it higher under the wordmark. */
+  top?: string;
 }) {
   // 480×125 on a 3132-wide canvas → 15.326u wide, 3.99u tall.
   return (
     <div
       className="absolute z-20"
-      style={{ left: "50%", top: "72%", transform: "translate(-50%, -50%)", width: "calc(var(--u) * 15.326)", height: "calc(var(--u) * 3.99)" }}
+      style={{ left: "50%", top, transform: "translate(-50%, -50%)", width: "calc(var(--u) * 15.326)", height: "calc(var(--u) * 3.99)" }}
     >
       <div
         className="w-full h-full"
@@ -392,7 +350,10 @@ function Popup({
             />
             <input
               value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              // Codes are letters only — the lobby renders them in Vodka Sans,
+              // which has no digit or punctuation glyphs. Strip as they type
+              // rather than failing later on a code that looked accepted.
+              onChange={(e) => setCode(normalizeRoomCode(e.target.value))}
               placeholder="Room code"
               maxLength={6}
               onKeyDown={(e) => e.key === "Enter" && join()}

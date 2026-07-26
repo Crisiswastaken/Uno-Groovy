@@ -75,9 +75,11 @@ export function RoomClient({ code }: { code: string }) {
 
   return (
     <>
-      {/* The groovy table art belongs to the play area only; the lobby brings
-          its own calmer backdrop. */}
-      {view.phase !== "lobby" && <RoomBackground isPhone={isPhone} />}
+      {/* The groovy table art belongs to the play area only. The lobby brings
+          its own calmer backdrop, and the round/match end screens bring the
+          landing hero — rendering the table art under either just stacked two
+          full-bleed backgrounds at the same depth. */}
+      {view.phase === "in_round" && <RoomBackground isPhone={isPhone} />}
       {!connected && (
         <div className="fixed top-0 inset-x-0 z-50 bg-uno-red text-uno-cream text-center text-sm font-semibold py-1">
           reconnecting…

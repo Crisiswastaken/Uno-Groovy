@@ -4,21 +4,41 @@ Web-based multiplayer **UNO** with host-configurable house rules — built with 
 server-authoritative game engine so hands stay secret and dropped players can
 rejoin their exact seat. Play 2–4 players per room over a shareable code.
 
-> **Desktop only for now** — the table isn't responsive yet, so phones/small
-> screens see a "Desktop only" notice. See [v1 scope](#notes--v1-scope).
+> **v2 — Mobile responsive.** Phones now get a purpose-built portrait
+> experience: their own game table, landing hero, and end screens. See
+> [what's new in v2](#whats-new-in-v2).
 
 ## Features
 
-- 🎴 **2–4 player rooms** with a shareable 6-char code / invite link.
+- 📱 **Plays on a phone** — a dedicated portrait game table (not a squeezed
+  desktop one), a swipeable card hand with momentum, and a portrait landing
+  hero. Rotate to landscape and it asks for portrait back.
+- 🎴 **2–4 player rooms** with a shareable 6-letter code / invite link.
 - 🔒 **Server-authoritative** — the deck and every hand live on the server; the
   client only ever sees its own cards. No cheating, and reconnects restore state.
 - ⚙️ **Configurable house rules** — UNO-call penalty, +2/+4 stacking, same-rank
   stacking, draw-until-playable, force-play, deal size, and single-round vs
   target-score scoring.
-- 🔁 **Resilient** — rejoin-first connection, a 30s disconnect grace with
-  auto-pass, and live reconnect banners.
-- ✨ A hand-drawn "groovy" art style, a first-visit loading intro, and playful
-  table motion.
+- 🔁 **Resilient** — rejoin-first connection, a 30s turn clock with auto-pass,
+  live reconnect banners, and abandoned rooms swept from memory.
+- ✨ A hand-drawn "groovy" art style, a first-visit loading intro, playful table
+  motion, and a confetti win screen.
+
+## What's new in v2
+
+- **Mobile responsive throughout.** Phones (≤500px) get `MobileGameTable`, a
+  portrait landing composition, and the same end screens reflowed — the desktop
+  experience is untouched.
+- **Redesigned win screen.** The landing hero art as a backdrop, the winner's
+  name as the headline, a staged entrance, and confetti.
+- **Room codes are letters-only.** The display font has no digit or punctuation
+  glyphs, so codes are now 6 letters (A–Z minus I/L/O).
+- **Server room lifecycle.** Rooms are created on join rather than on socket
+  connect, the turn clock parks while a room is empty, and abandoned rooms are
+  swept after 10 minutes.
+- **Fixes:** `/create` could not scroll on a first visit (the loading splash
+  never cleared its scroll lock), and its rule settings are now remembered
+  across a refresh.
 
 ## Game Stills
 
@@ -68,12 +88,17 @@ server/index.ts        Game server (deployed): Node ws server — identity, vali
 party/server.ts        Legacy PartyKit variant of the same server (unused; kept for reference)
 src/engine/            Pure, unit-tested game engine (types, deck, rules, engine) — shared by both
 src/shared/protocol.ts Zod message schemas + client/server message types
-src/store/ src/hooks/  Zustand view store + PartySocket connection
+src/store/ src/hooks/  Zustand view store + PartySocket connection + useIsPhone (the ≤500px seam)
 src/lib/               identity, avatars, asset preloading, env flags
 src/app/               Routes: landing, /create, /room/[code], /demo (dev-only)
-src/components/         Lobby, GameTable, Card/Hand, ColorPicker, RoundEnd, Toasts, ...
+src/components/        Lobby, GameTable + MobileGameTable, HeroScene, RoundEnd, Confetti, ...
 public/                Served card art, fonts, avatars, backgrounds
 ```
+
+Desktop and phone deliberately keep **separate component trees** — `GameTable`
+vs `MobileGameTable` — so a mobile CSS change can't reach the finished desktop
+table. The flip side: genuine *game-logic* fixes must be applied to both. See
+[`CLAUDE.md`](CLAUDE.md) for the full rules.
 
 ## Scripts
 
@@ -100,12 +125,16 @@ public/                Served card art, fonts, avatars, backgrounds
 | `dealSize` | 7 | Starting hand size. |
 | `scoringMode` / `targetScore` | singleRound / 500 | First to empty hand wins, or accumulate points to a target. |
 
-## Notes / v1 scope
+## Notes / scope
 
 - Room state lives in **server memory**: a *player* dropping is covered by
   rejoin; a rare *server* restart drops an in-progress game (no database by
-  design).
-- **Non-goals for v1:** spectators, jump-in / 7-0, accounts, chat,
-  cross-session persistence, and **mobile responsiveness**.
+  design). Rooms with no live connections are swept after 10 minutes.
+- **Phone support is portrait-only.** A phone in landscape gets a "rotate to
+  portrait" prompt rather than a squashed table.
+- **Still out of scope:** spectators, jump-in / 7-0, accounts, chat, and
+  cross-session persistence.
 
 Built per [`UNO_PRD.md`](UNO_PRD.md). Design system in [`design.md`](design.md).
+Working rules for changing the UI — especially mobile — are in
+[`CLAUDE.md`](CLAUDE.md).

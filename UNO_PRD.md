@@ -1,5 +1,12 @@
 # Custom UNO — Product Requirements Document (v1)
 
+> **Status: historical.** This is the v1 spec as written before build, kept as a
+> record of intent. It is *not* maintained against the current app. Two things
+> have since changed: the UI is no longer "minimal, decorated later" (see
+> [`design.md`](design.md)), and mobile responsiveness — a v1 non-goal — shipped
+> in v2. For what the app does today, see [`README.md`](README.md) and
+> [`CHANGELOG.md`](CHANGELOG.md).
+
 **Owner:** Vince
 **Status:** Draft for build
 **Last updated:** 2026-07-07

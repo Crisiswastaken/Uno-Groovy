@@ -42,8 +42,16 @@ import {
  */
 const TURN_TIMEOUT_MS = 30_000;
 const PORT = Number(process.env.PORT) || 1999;
-/** Drop rooms with no live sockets after this long, to avoid a memory leak. */
-const EMPTY_ROOM_TTL_MS = 30 * 60_000;
+/**
+ * Drop rooms with no live sockets after this long. Long enough to survive a
+ * refresh, a tunnel, or a backgrounded phone; short enough that abandoned rooms
+ * don't accumulate.
+ */
+const EMPTY_ROOM_TTL_MS = 10 * 60_000;
+/** How often the sweeper looks for expired rooms. */
+const SWEEP_INTERVAL_MS = 30_000;
+/** Legal room code: letters only (see randomRoomCode in src/lib/identity.ts). */
+const ROOM_CODE_RE = /^[A-Za-z]{4,8}$/;
 
 interface Room {
   code: string;
@@ -58,7 +66,20 @@ interface Room {
 
 const rooms = new Map<string, Room>();
 
-function getRoom(code: string): Room {
+/** Look up an existing room. Never creates — see getOrCreateRoom. */
+function findRoom(code: string): Room | undefined {
+  return rooms.get(code.toUpperCase());
+}
+
+/**
+ * Get the room, creating it if this is the first player in.
+ *
+ * Creation is deliberately tied to a `joinRoom` message rather than the socket
+ * upgrade: allocating on connect meant any client could mint unbounded rooms
+ * (each pinned for the full TTL) just by opening sockets, before sending a
+ * single valid message.
+ */
+function getOrCreateRoom(code: string): Room {
   const key = code.toUpperCase();
   let room = rooms.get(key);
   if (!room) {
@@ -90,6 +111,10 @@ function broadcastState(room: Room) {
 
 function bind(room: Room, ws: WebSocket, playerId: string) {
   room.conns.set(ws, playerId);
+  // The room is occupied again; the TTL clock only runs while it's empty. Note
+  // this is keyed on *joining*, not connecting — a socket that never joins must
+  // not keep an abandoned room alive.
+  room.emptySince = null;
 }
 
 /**
@@ -103,6 +128,14 @@ function armTurnTimer(room: Room) {
     room.turnTimer = null;
   }
   if (room.state.phase !== "in_round") {
+    room.state.turnDeadline = null;
+    return;
+  }
+  // Nobody is connected: don't run a clock into an empty room. Left armed, it
+  // auto-passed a turn every 30s and broadcast to zero sockets until the room
+  // was swept — so a table that everyone briefly dropped from came back several
+  // turns further along than they left it.
+  if (room.conns.size === 0) {
     room.state.turnDeadline = null;
     return;
   }
@@ -144,6 +177,9 @@ function handle(room: Room, ws: WebSocket, msg: ClientMessage) {
       if (!exists) return reject(ws, "No seat to rejoin");
       bind(room, ws, msg.playerId);
       setConnected(state, msg.playerId, true);
+      // Someone's back — restart the turn clock if it was parked because the
+      // room had emptied out.
+      if (!room.turnTimer) armTurnTimer(room);
       send(ws, { type: "joined", playerId: msg.playerId });
       broadcastState(room);
       return;
@@ -205,22 +241,30 @@ function handle(room: Room, ws: WebSocket, msg: ClientMessage) {
   broadcastState(room);
 }
 
-function onMessage(room: Room, ws: WebSocket, raw: string) {
+function onMessage(code: string, ws: WebSocket, raw: string) {
   let msg: ClientMessage;
   try {
     msg = clientMessageSchema.parse(JSON.parse(raw));
   } catch {
     return reject(ws, "Malformed message");
   }
+
+  // Resolve the room fresh on every message rather than capturing it in the
+  // socket's closure. A socket that connects but never joins isn't counted in
+  // room.conns, so the sweeper can delete a room it still points at; mutating
+  // that orphan forked the game state and leaked its turn timer, which nothing
+  // held a reference to any more.
+  const room = msg.type === "joinRoom" ? getOrCreateRoom(code) : findRoom(code);
+  if (!room) return reject(ws, "Room no longer exists");
   handle(room, ws, msg);
 }
 
-function onClose(room: Room, ws: WebSocket) {
+function onClose(code: string, ws: WebSocket) {
+  const room = findRoom(code);
+  if (!room) return; // already swept — nothing to clean up
+
   const playerId = room.conns.get(ws);
-  if (!playerId) {
-    if (room.conns.size === 0) room.emptySince = Date.now();
-    return;
-  }
+  if (!playerId) return; // never joined; it was never counted as an occupant
   room.conns.delete(ws);
 
   // Only mark disconnected if no other live socket holds this identity. The
@@ -233,7 +277,12 @@ function onClose(room: Room, ws: WebSocket) {
     broadcastState(room);
   }
 
-  if (room.conns.size === 0) room.emptySince = Date.now();
+  if (room.conns.size === 0) {
+    // Start the TTL clock, and park the turn clock so an empty table doesn't
+    // keep auto-passing turns to nobody.
+    room.emptySince = Date.now();
+    armTurnTimer(room);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -249,12 +298,19 @@ const server = createServer((req, res) => {
 
 const wss = new WebSocketServer({ noServer: true });
 
-/** Extract the room code from a `/parties/<party>/<room>` path (query ignored). */
+/**
+ * Extract the room code from a `/parties/<party>/<room>` path (query ignored).
+ * Rejects anything that isn't a legal code, so a malformed or hostile path can
+ * never reach room allocation.
+ */
 function roomCodeFromUrl(url: string | undefined): string | null {
   const path = new URL(url || "/", "http://localhost").pathname;
   const parts = path.split("/").filter(Boolean);
   const code = parts[parts.length - 1];
-  return code && code.toLowerCase() !== "main" && parts.includes("parties") ? code : null;
+  if (!code || !parts.includes("parties")) return null;
+  if (code.toLowerCase() === "main") return null;
+  if (!ROOM_CODE_RE.test(code)) return null;
+  return code;
 }
 
 server.on("upgrade", (req: IncomingMessage, socket, head) => {
@@ -269,12 +325,12 @@ server.on("upgrade", (req: IncomingMessage, socket, head) => {
 });
 
 wss.on("connection", (ws: WebSocket, _req: IncomingMessage, code: string) => {
-  const room = getRoom(code);
-  room.emptySince = null;
+  // Only the CODE is captured here, never the Room object — the room is looked
+  // up per message so this socket can't outlive and then resurrect a swept room.
   // Identity is established via the first joinRoom/rejoin message, not the socket.
   send(ws, { type: "error", reason: "awaiting-join" });
-  ws.on("message", (data) => onMessage(room, ws, data.toString()));
-  ws.on("close", () => onClose(room, ws));
+  ws.on("message", (data) => onMessage(code, ws, data.toString()));
+  ws.on("close", () => onClose(code, ws));
   ws.on("error", () => ws.close());
 });
 
@@ -289,9 +345,10 @@ setInterval(() => {
     ) {
       if (room.turnTimer) clearTimeout(room.turnTimer);
       rooms.delete(key);
+      console.log(`Swept abandoned room ${key} (empty > ${EMPTY_ROOM_TTL_MS / 60_000}m)`);
     }
   }
-}, 60_000).unref();
+}, SWEEP_INTERVAL_MS).unref();
 
 server.listen(PORT, () => {
   console.log(`Custom UNO game server listening on :${PORT}`);
