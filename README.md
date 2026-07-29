@@ -138,3 +138,27 @@ table. The flip side: genuine *game-logic* fixes must be applied to both. See
 Built per [`UNO_PRD.md`](UNO_PRD.md). Design system in [`design.md`](design.md).
 Working rules for changing the UI — especially mobile — are in
 [`CLAUDE.md`](CLAUDE.md).
+
+## License
+
+This project is released under the [MIT License](LICENSE).
+
+## Trademark & fair use
+
+**UNO** is a registered trademark of Mattel, Inc. This repository is an
+independent, non-commercial hobby project — built so a few friends could play
+together online. It is not affiliated with, endorsed by, or sponsored by Mattel.
+
+The name and card game concept are used here only to describe what the app does.
+All original artwork, code, and assets in this repo are my own work.
+
+If Mattel (or its representatives) believe this project infringes their rights,
+please reach out or file a DMCA notice — I will comply promptly and take the
+site down. No lawyers required on my end; a straightforward takedown request is
+enough.
+
+## Analytics
+
+The deployed web app uses [Vercel Web Analytics](https://vercel.com/docs/analytics)
+for anonymous, privacy-friendly page-view metrics. Analytics runs in the browser
+only; no game data or player identities are sent to Vercel.

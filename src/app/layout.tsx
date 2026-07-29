@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { Splash } from "../components/Splash";
 import { ClickSpark } from "../components/ClickSpark";
@@ -52,6 +53,7 @@ export default function RootLayout({
           <RotatePrompt />
           <MuteToggle />
         </SensoryUIProvider>
+        <Analytics />
       </body>
     </html>
   );
