@@ -6,6 +6,7 @@ import { normalizeRoomCode, setName } from "../lib/identity";
 import { usePlaySound } from "../hooks/use-play-sound";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { HeroBackdrop, HERO_PORTRAIT_RATIO, HERO_RATIO } from "../components/HeroScene";
+import { HomeFooter } from "../components/HomeFooter";
 
 /**
  * The landing hero: the shared <HeroBackdrop /> art composition (see
@@ -113,6 +114,7 @@ export default function Landing() {
     return (
       <>
         <LandingPortrait onPlay={openPopup} onHover={playHover} />
+        <HomeFooter />
         {popupEl}
       </>
     );
@@ -136,6 +138,7 @@ export default function Landing() {
           canvas via --u. Opens the create/join popup. */}
       <PlayButton depth={14} pointer={pointer} onHover={playHover} onClick={openPopup} />
 
+      <HomeFooter />
       {popupEl}
     </main>
   );
