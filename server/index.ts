@@ -290,6 +290,28 @@ function onClose(code: string, ws: WebSocket) {
 // ---------------------------------------------------------------------------
 
 const server = createServer((req, res) => {
+  // CORS is wide open on purpose: the only HTTP surface is the readiness probe
+  // below, which returns nothing private, and the front end is served from a
+  // different origin (Vercel) than this server.
+  res.setHeader("access-control-allow-origin", "*");
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // Readiness probe. On a free host the container sleeps when idle, so the
+  // first player back waits out a cold boot; the client polls this to tell
+  // "the server is still booting" apart from "you're offline" and to show the
+  // right message instead of an endless spinner. Cheap and unauthenticated —
+  // it exposes only liveness, not room contents.
+  const path = new URL(req.url || "/", "http://localhost").pathname;
+  if (path === "/health") {
+    res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify({ ok: true, rooms: rooms.size, uptimeSec: Math.round(process.uptime()) }));
+    return;
+  }
+
   // Plain HTTP hits (health checks, a curious browser) get a friendly 200 so
   // hosts like Render see the port as live.
   res.writeHead(200, { "content-type": "text/plain" });

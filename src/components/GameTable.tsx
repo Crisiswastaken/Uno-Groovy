@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Card, ClientView, Color } from "../engine/types";
-import { canPlay, isWild } from "../engine/rules";
+import { canPlay, canStackRank, isWild } from "../engine/rules";
 import type { ClientMessage } from "../shared/protocol";
 import { avatarFor } from "../lib/avatars";
 import { usePlaySound } from "../hooks/use-play-sound";
 import { CardBack, CardFace, swatch } from "./Card";
+import { CatchAlert, catchableOpponent } from "./CatchCall";
 import { ColorPicker } from "./ColorPicker";
 import { OpponentSeat } from "./OpponentSeat";
 import { CountdownRing } from "./TurnTimer";
@@ -71,7 +72,10 @@ export function GameTable({
   }, [opponents]);
 
   const myHand = view.yourHand;
-  const stackingOn = view.config.stacking;
+  /** Can this rank be played several-at-once under the room's house rules?
+      Per-rank, not a single flag: the +2 / +4 chain toggles imply their own
+      rank stacks even when the master `stacking` toggle is off. */
+  const stacksOf = (v: Card["value"]) => canStackRank(v, view.config);
   const mustPlay = view.pendingPass?.mustPlay ?? false;
   const drawnUids = view.pendingPass?.drawnUids ?? [];
 
@@ -247,36 +251,32 @@ export function GameTable({
   // Tappable if it's a legal opener, or (mid-stack) matches the selected rank.
   const cardClickable = (card: Card) =>
     canOpenWith(card) ||
-    (stackingOn && selected.length > 0 && card.value === selRank);
+    (selected.length > 0 && card.value === selRank && stacksOf(card.value));
+
+  /** Open a turn with `card`: enter stack selection if a stack is on the table,
+      otherwise commit it on its own. */
+  const openWith = (card: Card) => {
+    if (!canOpenWith(card)) return;
+    const sameRank = stacksOf(card.value)
+      ? myHand.filter((c) => c.value === card.value)
+      : [card];
+    if (sameRank.length <= 1) commit([card.uid]); // nothing to stack — just play
+    else {
+      selectSfx.play();
+      setSelected([card.uid]); // enter selection
+    }
+  };
 
   const onCardClick = (card: Card) => {
     if (!isMyTurn) return;
 
-    if (!stackingOn) {
-      if (canOpenWith(card)) commit([card.uid]);
-      return;
-    }
-
     if (selected.length === 0) {
-      if (!canOpenWith(card)) return;
-      const sameRank = myHand.filter((c) => c.value === card.value);
-      if (sameRank.length <= 1) commit([card.uid]); // nothing to stack — just play
-      else {
-        selectSfx.play();
-        setSelected([card.uid]); // enter selection
-      }
+      openWith(card);
       return;
     }
 
     if (card.value !== selRank) {
-      // Tapped a different rank — switch the selection to it.
-      if (!canOpenWith(card)) return;
-      const sameRank = myHand.filter((c) => c.value === card.value);
-      if (sameRank.length <= 1) commit([card.uid]);
-      else {
-        selectSfx.play();
-        setSelected([card.uid]);
-      }
+      openWith(card); // tapped a different rank — switch the selection to it
       return;
     }
 
@@ -309,6 +309,14 @@ export function GameTable({
   // UNO is called on your last-but-one card — only ever with a single card left.
   const canCallUno = myHand.length === 1 && !me?.hasCalledUno;
 
+  // At most one opponent is ever catchable (a single vulnerable seat), so the
+  // big catch action never has to disambiguate.
+  const catchTarget = catchableOpponent(view);
+  const sendCatch = (targetPlayerId: string) => {
+    catchSfx.play();
+    send({ type: "catchMissedUno", targetPlayerId });
+  };
+
   const renderSeat = (p: (typeof opponents)[number], o: Orientation) => (
     <OpponentSeat
       key={p.playerId}
@@ -316,10 +324,7 @@ export function GameTable({
       orientation={o}
       isCurrent={view.currentSeat === p.seat}
       turnEndsAt={view.currentSeat === p.seat ? view.turnEndsAt : null}
-      onCatch={() => {
-        catchSfx.play();
-        send({ type: "catchMissedUno", targetPlayerId: p.playerId });
-      }}
+      onCatch={() => sendCatch(p.playerId)}
     />
   );
 
@@ -436,6 +441,16 @@ export function GameTable({
           </div>
         </div>
       </div>
+
+      {/* Catch a missed UNO, bottom-left — the mirror of your own UNO button, so
+          the race is fought with two equally reachable controls. */}
+      {catchTarget && (
+        <CatchAlert
+          className="absolute bottom-8 left-10"
+          name={catchTarget.displayName}
+          onCatch={() => sendCatch(catchTarget.playerId)}
+        />
+      )}
 
       {/* UNO! call, bottom-right. */}
       <UnoButton

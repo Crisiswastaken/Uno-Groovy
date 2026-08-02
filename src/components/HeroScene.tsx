@@ -72,6 +72,7 @@ function Backdrop({
 export function HeroBackdrop({
   pointer = ZERO,
   wordmark = true,
+  plus4 = true,
 }: {
   /** Eased pointer for the desktop parallax; omit for a still backdrop. */
   pointer?: { x: number; y: number };
@@ -80,12 +81,18 @@ export function HeroBackdrop({
    * winner's name takes that spot, and the logo behind it just read as clutter.
    */
   wordmark?: boolean;
+  /**
+   * Draw the scattered wild +4 cut-out. Off for the 404 page, whose subject is
+   * itself a hand of cards — a second loose card in the art read as a stray
+   * member of that hand. Desktop-only; the portrait canvas has no +4 layer.
+   */
+  plus4?: boolean;
 }) {
   const isPhone = useIsPhone();
   return isPhone ? (
     <PortraitScene wordmark={wordmark} />
   ) : (
-    <DesktopScene pointer={pointer} wordmark={wordmark} />
+    <DesktopScene pointer={pointer} wordmark={wordmark} plus4={plus4} />
   );
 }
 
@@ -94,9 +101,11 @@ export function HeroBackdrop({
 function DesktopScene({
   pointer,
   wordmark,
+  plus4,
 }: {
   pointer: { x: number; y: number };
   wordmark: boolean;
+  plus4: boolean;
 }) {
   return (
     <Backdrop bg={DESKTOP_BG} ratio={HERO_RATIO}>
@@ -117,7 +126,9 @@ function DesktopScene({
         <Layer src="/home-new/sunflower.png" w={15.87} h={35.87} cx={86} cy={82} depth={15} rot={2} float={1.2} dur={7.9} delay={0.1} z={3} pointer={pointer} />
         <Layer src="/home-new/pencil.png" w={5.97} h={9.65} cx={34.5} cy={86} depth={24} rot={0} float={1.1} dur={7.1} delay={0.7} z={4} pointer={pointer} />
         <Layer src="/home-new/apple.png" w={4.92} h={9.53} cx={69.5} cy={71} depth={28} rot={5} float={1.3} dur={6.5} delay={1.4} z={4} pointer={pointer} />
-        <Layer src="/home-new/plus4.png" w={9.74} h={22.42} cx={25.5} cy={37} depth={32} rot={-7} float={1.5} dur={6.2} delay={0.5} z={5} pointer={pointer} />
+        {plus4 && (
+          <Layer src="/home-new/plus4.png" w={9.74} h={22.42} cx={25.5} cy={37} depth={32} rot={-7} float={1.5} dur={6.2} delay={0.5} z={5} pointer={pointer} />
+        )}
         <Layer src="/home-new/ship.png" w={11.85} h={26.73} cx={8.5} cy={84} depth={36} rot={-3} float={1.6} dur={5.8} delay={0.3} z={5} pointer={pointer} />
 
         {/* UNO wordmark — the scene anchor, so it drifts the least. */}

@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Card, ClientView, Color } from "../engine/types";
-import { canPlay, isWild } from "../engine/rules";
+import { canPlay, canStackRank, isWild } from "../engine/rules";
 import type { ClientMessage } from "../shared/protocol";
 import { avatarFor } from "../lib/avatars";
 import { usePlaySound } from "../hooks/use-play-sound";
 import { CardBack, CardFace, swatch } from "./Card";
+import { CatchAlert, CatchPill, catchableOpponent } from "./CatchCall";
 import { ColorPicker } from "./ColorPicker";
 import { CountdownRing } from "./TurnTimer";
 import { Card as Img } from "./ui/Card";
@@ -107,7 +108,10 @@ export function MobileGameTable({
   }, [opponents]);
 
   const myHand = view.yourHand;
-  const stackingOn = view.config.stacking;
+  /** Can this rank be played several-at-once under the room's house rules?
+      Per-rank, not a single flag: the +2 / +4 chain toggles imply their own
+      rank stacks even when the master `stacking` toggle is off. */
+  const stacksOf = (v: Card["value"]) => canStackRank(v, view.config);
   const mustPlay = view.pendingPass?.mustPlay ?? false;
   const drawnUids = view.pendingPass?.drawnUids ?? [];
 
@@ -261,35 +265,32 @@ export function MobileGameTable({
   // Tappable if it's a legal opener, or (mid-stack) matches the selected rank.
   const cardClickable = (card: Card) =>
     canOpenWith(card) ||
-    (stackingOn && selected.length > 0 && card.value === selRank);
+    (selected.length > 0 && card.value === selRank && stacksOf(card.value));
+
+  /** Open a turn with `card`: enter stack selection if a stack is on the table,
+      otherwise commit it on its own. */
+  const openWith = (card: Card) => {
+    if (!canOpenWith(card)) return;
+    const sameRank = stacksOf(card.value)
+      ? myHand.filter((c) => c.value === card.value)
+      : [card];
+    if (sameRank.length <= 1) commit([card.uid]);
+    else {
+      selectSfx.play();
+      setSelected([card.uid]);
+    }
+  };
 
   const onCardClick = (card: Card) => {
     if (!isMyTurn) return;
 
-    if (!stackingOn) {
-      if (canOpenWith(card)) commit([card.uid]);
-      return;
-    }
-
     if (selected.length === 0) {
-      if (!canOpenWith(card)) return;
-      const sameRank = myHand.filter((c) => c.value === card.value);
-      if (sameRank.length <= 1) commit([card.uid]);
-      else {
-        selectSfx.play();
-        setSelected([card.uid]);
-      }
+      openWith(card);
       return;
     }
 
     if (card.value !== selRank) {
-      if (!canOpenWith(card)) return;
-      const sameRank = myHand.filter((c) => c.value === card.value);
-      if (sameRank.length <= 1) commit([card.uid]);
-      else {
-        selectSfx.play();
-        setSelected([card.uid]);
-      }
+      openWith(card); // tapped a different rank — switch the selection to it
       return;
     }
 
@@ -317,6 +318,13 @@ export function MobileGameTable({
   const noPlayable = canDraw && myHand.length > 0 && !myHand.some((c) => canOpenWith(c));
   const canCallUno = myHand.length === 1 && !me?.hasCalledUno;
 
+  // At most one opponent is ever catchable (a single vulnerable seat).
+  const catchTarget = catchableOpponent(view);
+  const sendCatch = (targetPlayerId: string) => {
+    catchSfx.play();
+    send({ type: "catchMissedUno", targetPlayerId });
+  };
+
   const renderSeat = (p: (typeof opponents)[number], o: Orientation) => (
     <MobileSeat
       key={p.playerId}
@@ -324,10 +332,7 @@ export function MobileGameTable({
       orientation={o}
       isCurrent={view.currentSeat === p.seat}
       turnEndsAt={view.currentSeat === p.seat ? view.turnEndsAt : null}
-      onCatch={() => {
-        catchSfx.play();
-        send({ type: "catchMissedUno", targetPlayerId: p.playerId });
-      }}
+      onCatch={() => sendCatch(p.playerId)}
     />
   );
 
@@ -415,6 +420,18 @@ export function MobileGameTable({
               </button>
             )}
           </div>
+        )}
+
+        {/* Catch a missed UNO, floating above the tray's LEFT edge — the mirror
+            of the UNO button, so both sides of the race are thumb-reachable
+            instead of the catch hiding as a sliver on an opponent seat. */}
+        {catchTarget && (
+          <CatchAlert
+            className="absolute left-[4vw] bottom-full mb-3"
+            name={catchTarget.displayName}
+            onCatch={() => sendCatch(catchTarget.playerId)}
+            compact
+          />
         )}
 
         {/* UNO! call, floating above the tray's right edge. */}
@@ -823,13 +840,9 @@ function MobileSeat({
     </span>
   );
 
+  // Seat-level catch marker; the fast action is <CatchAlert> above the tray.
   const catchBtn = player.isCatchable && onCatch && (
-    <button
-      onClick={onCatch}
-      className="text-[10px] bg-uno-red text-uno-cream font-bold px-2 py-0.5 rounded-full border-2 border-uno-cream shadow-[0_2px_4px_rgba(43,42,39,0.3)] animate-pulse"
-    >
-      Catch!
-    </button>
+    <CatchPill onCatch={onCatch} compact />
   );
 
   const backing = isCurrent

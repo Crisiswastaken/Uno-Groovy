@@ -352,6 +352,45 @@ textarea,
   animation: uno-wiggle 0.9s ease-in-out infinite;
 }
 
+/* Catching a missed UNO is a race, so its control is deliberately loud: the
+   button breathes and a soft red halo pulses behind it. Same idiom as
+   .draw-hint-halo — a sibling span, so the button's own hover/active transforms
+   stay free. `both` is wrong here (the resting state IS identity); the default
+   fill keeps hover working after each cycle. */
+@keyframes catch-throb {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+.catch-alert {
+  animation: catch-throb 0.85s ease-in-out infinite;
+}
+@keyframes catch-halo-pulse {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.06);
+  }
+}
+.catch-halo {
+  background: radial-gradient(
+    circle,
+    var(--color-uno-red) 0%,
+    rgba(248, 92, 30, 0.35) 55%,
+    transparent 72%
+  );
+  filter: blur(10px);
+  animation: catch-halo-pulse 0.85s ease-in-out infinite;
+}
+
 /* Current player's avatar does a soft breathing bob. */
 @keyframes seat-bob {
   0%,
@@ -635,6 +674,23 @@ textarea,
   animation: win-rise-in 500ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
+/* The live table's exit, once the winning card has been held on screen for a
+   beat (useEndHold). It hands over to the win screen instead of hard-cutting. */
+@keyframes table-outro {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+.table-outro {
+  animation: table-outro 420ms ease-in forwards;
+  pointer-events: none;
+}
+
 /* The backdrop art itself eases up so the whole screen arrives together. */
 @keyframes win-backdrop-in {
   0% {
@@ -655,13 +711,172 @@ textarea,
   .win-line,
   .win-card,
   .win-rise,
-  .win-backdrop {
+  .win-backdrop,
+  .table-outro {
     animation-name: win-backdrop-in;
     animation-duration: 260ms;
   }
   /* The crown is centered by its own transform, which the fade must not drop. */
   .win-crown {
     transform: translate(-50%, 0);
+  }
+}
+
+/* ------------------------------------------------------- Not found ---
+   The 404 page (app/not-found.tsx) spells "404" with three real UNO cards, so
+   its entrance is a deal: the three fly out of one spot and settle into a fan,
+   then the way out arrives under them. Nothing on the page appears on frame
+   one — every piece has its own stagger and its own settle.
+
+   All new names (`nf-*`), additive — nothing here is referenced by the tables.
+   Every one of these ends on an identity transform and uses `backwards` fill,
+   so once the reveal is over the element's own hover/active transforms apply
+   normally (the rule from §5 of CLAUDE.md). Resting rotation and the fan's arc
+   offset are deliberately NOT in these keyframes — they live inline on a
+   wrapper element, which is what keeps that identity ending true. */
+
+/* The hero art. Opacity ONLY, and that is not an aesthetic choice: this class
+   sits on a wrapper around <HeroBackdrop />, whose scene is `fixed inset-0`.
+   Any transform here would make the wrapper the containing block for that
+   fixed child and collapse the backdrop to the wrapper's own (zero) height —
+   the same trap documented for the win screen's outro wrapper. A long, slow
+   ease is what keeps it from reading as a hard cut. */
+@keyframes nf-backdrop-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.nf-backdrop {
+  animation: nf-backdrop-in 1100ms ease-out backwards;
+}
+
+/* Each card flies out of the deck and settles. The overshoot at 78% is the
+   whole point: it lands slightly past its mark, tips 2°, then eases back, so
+   the card reads as dealt by a hand rather than placed by a script. */
+@keyframes nf-deal-in {
+  0% {
+    opacity: 0;
+    /* --nf-from is the card's own x-offset, so all three appear to leave the
+       same point in the middle and fan outward. */
+    transform: translate(var(--nf-from, 0), 82%) rotate(-22deg) scale(0.82);
+  }
+  55% {
+    opacity: 1;
+  }
+  78% {
+    transform: translate(0, -4%) rotate(2deg) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+}
+.nf-deal {
+  animation: nf-deal-in 760ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* The pill rises under the settled hand with a soft bounce. */
+@keyframes nf-pill-in {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.94);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(0) scale(1.015);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.nf-pill {
+  animation: nf-pill-in 560ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* The pill's red arrow chip pops in last — a small full stop on the sequence,
+   and the reason the button doesn't arrive as one flat shape. */
+@keyframes nf-chip-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(-25deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+.nf-chip {
+  animation: nf-chip-in 480ms cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+}
+
+/* Reduced motion: keep the staging, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .nf-deal,
+  .nf-pill,
+  .nf-chip {
+    animation-name: nf-backdrop-in;
+    animation-duration: 260ms;
+  }
+  .nf-backdrop {
+    animation-duration: 260ms;
+  }
+}
+
+/* ------------------------------------------------------ Copy invite ---
+   The lobby's room code + QR are one big copy target. Feedback is a press
+   that settles rather than a bounce — copying is a confirmation, not a
+   celebration, and this fires on every tap. */
+@keyframes copy-press {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(0.975);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+/* `backwards`, not `both`: the resting transform is identity, so holding the
+   final frame would defeat the hover/active transforms on the target. */
+.copy-press {
+  animation: copy-press 420ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* The "Link copied" line replaces the hint in place, so it rises into the
+   same slot rather than shifting the layout around it. */
+@keyframes copy-note-in {
+  0% {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.copy-note {
+  animation: copy-note-in 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .copy-press {
+    animation: none;
+  }
+  .copy-note {
+    animation-name: copy-note-fade;
+  }
+  @keyframes copy-note-fade {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
   }
 }
 

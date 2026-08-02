@@ -77,21 +77,21 @@ export default function CreatePage() {
           )}
 
           <ToggleCard
-            label="Stack +2 on +2"
-            hint="Pass along an accumulating +2 penalty"
+            label="Chain +2 on +2"
+            hint="Pass along an accumulating +2 penalty (also lets you play several +2s at once)"
             value={config.stackDraw2OnDraw2}
             onChange={(v) => set("stackDraw2OnDraw2", v)}
           />
           <ToggleCard
-            label="Stack +4 on +2 or +4"
-            hint="+2 onto +4 stays forbidden"
+            label="Chain +4 on +2 or +4"
+            hint="+2 onto +4 stays forbidden (also lets you play several +4s at once)"
             value={config.stackDraw4OnDraw2Or4}
             onChange={(v) => set("stackDraw4OnDraw2Or4", v)}
           />
 
           <ToggleCard
-            label="Stacking"
-            hint="Play multiple same number/symbol cards at once"
+            label="Play multiple cards"
+            hint="Play several same number/symbol cards in one turn — two 5s, two Wilds, two +4s"
             value={config.stacking}
             onChange={(v) => set("stacking", v)}
           />

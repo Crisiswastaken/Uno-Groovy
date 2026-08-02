@@ -18,7 +18,7 @@ import confetti from "canvas-confetti";
  */
 const COLORS = ["#f85c1e", "#fbb22d", "#89a557", "#177dc6", "#f1e7dc"];
 
-export function Confetti() {
+export function Confetti({ delay = 0 }: { delay?: number }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -57,10 +57,12 @@ export function Confetti() {
       },
     ];
 
-    const timers = shots.map(({ delay, opts }) =>
+    // `delay` offsets the whole volley so it can be fired on a cue — the win
+    // screen holds it until the winner's name lands.
+    const timers = shots.map(({ delay: at, opts }) =>
       setTimeout(() => {
         void fire({ colors: COLORS, ticks: 220, gravity: 0.9, decay: 0.92, ...opts });
-      }, delay),
+      }, delay + at),
     );
 
     return () => {
@@ -68,7 +70,7 @@ export function Confetti() {
       // Stops in-flight particles and releases the worker.
       fire.reset();
     };
-  }, []);
+  }, [delay]);
 
   return (
     <canvas

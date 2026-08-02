@@ -174,6 +174,57 @@ describe("stacking", () => {
     expect(s.currentSeat).toBe(1);
   });
 
+  it("plays two Wild +4s as one stack, taking a single chosen color", () => {
+    const s = room({ stacking: true });
+    setup(s, c("red", "3"), [c(null, "wild_draw4"), c(null, "wild_draw4"), c("green", "9")]);
+    const uids = [s.players[0].hand[0].uid, s.players[0].hand[1].uid];
+    const r = playCards(s, "p1", uids, "blue");
+    expect(r.ok).toBe(true);
+    expect(s.pendingDraw).toBe(8); // 4 per card
+    expect(s.activeColor).toBe("blue");
+    expect(s.players[0].hand.length).toBe(1);
+  });
+
+  it("plays two Wilds as one stack", () => {
+    const s = room({ stacking: true });
+    setup(s, c("red", "3"), [c(null, "wild"), c(null, "wild"), c("green", "9")]);
+    const uids = [s.players[0].hand[0].uid, s.players[0].hand[1].uid];
+    expect(playCards(s, "p1", uids, "green").ok).toBe(true);
+    expect(s.activeColor).toBe("green");
+    expect(s.pendingDraw).toBe(0);
+  });
+
+  it("rejects a wild stack with no chosen color", () => {
+    const s = room({ stacking: true });
+    setup(s, c("red", "3"), [c(null, "wild_draw4"), c(null, "wild_draw4")]);
+    const uids = s.players[0].hand.map((h) => h.uid);
+    expect(playCards(s, "p1", uids).ok).toBe(false);
+  });
+
+  it("lets the +4 chain rule stack +4s even with the master toggle off", () => {
+    const s = room({ stacking: false, stackDraw4OnDraw2Or4: true });
+    setup(s, c("red", "3"), [c(null, "wild_draw4"), c(null, "wild_draw4"), c("red", "1")]);
+    const uids = s.players[0].hand.slice(0, 2).map((h) => h.uid);
+    expect(playCards(s, "p1", uids, "red").ok).toBe(true);
+    expect(s.pendingDraw).toBe(8);
+  });
+
+  it("still rejects a wild stack when no rule allows it", () => {
+    const s = room({ stacking: false, stackDraw4OnDraw2Or4: false });
+    setup(s, c("red", "3"), [c(null, "wild_draw4"), c(null, "wild_draw4")]);
+    const uids = s.players[0].hand.map((h) => h.uid);
+    expect(playCards(s, "p1", uids, "red").ok).toBe(false);
+  });
+
+  it("stacks two +4s onto a pending +4 when chaining is on", () => {
+    const s = room({ stacking: true, stackDraw4OnDraw2Or4: true });
+    setup(s, c(null, "wild_draw4"), [c(null, "wild_draw4"), c(null, "wild_draw4"), c("red", "1")]);
+    s.pendingDraw = 4;
+    const uids = s.players[0].hand.slice(0, 2).map((h) => h.uid);
+    expect(playCards(s, "p1", uids, "yellow").ok).toBe(true);
+    expect(s.pendingDraw).toBe(12); // 4 pending + 4 + 4
+  });
+
   it("two skips skip two players", () => {
     const s = room3({ stacking: true });
     s.phase = "in_round";

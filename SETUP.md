@@ -156,3 +156,5 @@ need testing on their own.
 - `/demo/mobile-2` and `/demo/mobile-4` render the phone table in a 390×844
   frame on a desktop browser, which is the fastest way to iterate on it. These
   routes are dev-only and 404 in production.
+- `/demo/qr` tunes the lobby invite QR (`RoomQr`) at different sizes before
+  scanning on a real phone.

@@ -1,5 +1,49 @@
 # Changelog
 
+## v2.1.0 — Gameplay polish & join reliability
+
+### Fixed
+
+- **Catching a missed UNO was unwinnable.** The only control was an 11px pill on
+  an opponent's seat, so the caller had already tapped UNO by the time you found
+  it. The catch now also has a large primary action beside your own UNO button
+  (`CatchCall.tsx` — bottom-left on desktop, above the tray on phones), and the
+  seat marker is a real touch target.
+- **Wild +4s and Wilds can be stacked.** Multi-card play is decided per rank
+  (`canStackRank`): the master "Play multiple cards" rule covers every rank
+  including wilds, and the +2/+4 chain rules now also allow their own rank to be
+  played several-at-once — which is how players read those toggles. A stack of
+  wilds asks for the chosen color exactly **once**, for the whole play.
+- **The win screen no longer cuts in mid-play.** `useEndHold` freezes the final
+  board for ~1.1s after the winning card lands, fades the table out, and only
+  then hands over to `RoundEnd`, whose entrance was retimed into two acts —
+  "<NAME> WINS" first, then crown, card, scoreboard and button. Confetti fires
+  on the name, not on an empty backdrop.
+- **A sleeping backend left players stuck on the loading screen forever.** When
+  the server had been swept or was cold-booting, the client's `rejoin` was
+  answered with "Room no longer exists" — a reason nothing handled, so the join
+  never happened. That reason now falls back to a fresh join, a watchdog
+  re-announces the player every 2.5s until state arrives, and the host's rule
+  config is kept in storage until they're actually seated (so a reload of a
+  stuck page doesn't lose the room's house rules).
+
+### Added
+
+- **Lobby invite QR** (`RoomQr.tsx`) — a scan-to-join code in the lobby, styled
+  with UNO accent finder rings. The room code and QR share one tap target that
+  copies the invite link; `/demo/qr` is a dev-only tuning page.
+- **Custom 404 page** (`not-found.tsx`) — three UNO cards (red 4, blue 0,
+  yellow 4) deal into a fan on the landing hero art, with a staged entrance.
+- **`GET /health`** on the game server (plus permissive CORS) — a readiness
+  probe so the client can tell "the server is booting" from "you're offline".
+- **A cold-start message** on the room screen: after 3.5s with no state it
+  explains that the free-tier server is waking up, and shows elapsed time.
+
+### Changed
+
+- **House-rule labels on `/create`** — "Chain +2/+4" and "Play multiple cards"
+  with hints that spell out multi-card plays (two Wilds, two +4s, etc.).
+
 ## v2.0.0 — Mobile responsive
 
 Phones get a real experience instead of a "Desktop only" notice. Every screen

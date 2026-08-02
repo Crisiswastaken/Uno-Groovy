@@ -34,16 +34,29 @@ export function stashCreate(code: string, payload: CreatePayload) {
   localStorage.setItem(createKey(code), JSON.stringify(payload));
 }
 
-export function takeCreate(code: string): CreatePayload | null {
+/**
+ * Read the host's create payload WITHOUT consuming it.
+ *
+ * It used to be taken (read + deleted) on mount, which lost the room's house
+ * rules if the join never completed — exactly what happens when the backend is
+ * cold and the player reloads the stuck page. The payload is now cleared only
+ * once the server has actually seated us; see `clearCreate`.
+ */
+export function peekCreate(code: string): CreatePayload | null {
   if (typeof window === "undefined") return null;
   const raw = localStorage.getItem(createKey(code));
   if (!raw) return null;
-  localStorage.removeItem(createKey(code));
   try {
     return JSON.parse(raw) as CreatePayload;
   } catch {
     return null;
   }
+}
+
+/** Drop the create payload — call once the host is seated in the room. */
+export function clearCreate(code: string) {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(createKey(code));
 }
 
 /* ------------------------------------------------------------- Rule draft ---

@@ -8,22 +8,28 @@ import { Confetti } from "./Confetti";
 import { Card as Img } from "./ui/Card";
 
 /**
- * Entrance choreography, in ms. Everything lands inside ~1.3s: backdrop, then
- * the panel, its text lines, the crown dropping on, the +4 sliding out, the
- * scoreboard rows, and the button last so the eye ends on the thing to click.
+ * Entrance choreography, in ms. The screen arrives in two clear acts so nobody
+ * has to work out what just happened:
+ *
+ *   act 1 (0–1.0s)   backdrop, panel, "<NAME> WINS" — the answer, alone
+ *   act 2 (1.0–1.8s) crown, card, scoreboard, and the button last, so the eye
+ *                    ends on the thing to click
+ *
+ * This runs AFTER useEndHold has held the final board for ~1.5s, so the whole
+ * sequence reads as: last card lands → table fades → winner → the rest.
  * Keyframes live in globals.css under `win-*`.
  */
 const T = {
   backdrop: 0,
-  panel: 120,
-  label: 320,
-  name: 420,
-  wins: 520,
-  crown: 560,
-  card: 660,
-  scores: 720,
-  scoreRowStep: 80,
-  button: 980,
+  panel: 150,
+  label: 380,
+  name: 560,
+  wins: 760,
+  crown: 1000,
+  card: 1120,
+  scores: 1240,
+  scoreRowStep: 100,
+  button: 1560,
 } as const;
 
 /** `animation-delay` shorthand — the keyframes carry `backwards` fill. */
@@ -71,7 +77,9 @@ export function RoundEnd({
         <HeroBackdrop wordmark={false} />
       </div>
 
-      <Confetti />
+      {/* Held back so the burst celebrates the NAME as it lands, not an empty
+          backdrop. */}
+      <Confetti delay={T.name} />
 
       <WinnerCard
         label={isMatchEnd ? "Match Over" : "Round Over"}

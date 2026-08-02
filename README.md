@@ -4,27 +4,50 @@ Web-based multiplayer **UNO** with host-configurable house rules — built with 
 server-authoritative game engine so hands stay secret and dropped players can
 rejoin their exact seat. Play 2–4 players per room over a shareable code.
 
-> **v2 — Mobile responsive.** Phones now get a purpose-built portrait
-> experience: their own game table, landing hero, and end screens. See
-> [what's new in v2](#whats-new-in-v2).
+> **v2.1 — Gameplay polish.** Catchable UNO, wild stacking, a smoother win
+> handoff, lobby QR invites, and cold-start messaging when the free-tier server
+> wakes up. Phones still get the v2 portrait experience — see
+> [what's new](#whats-new).
 
 ## Features
 
 - 📱 **Plays on a phone** — a dedicated portrait game table (not a squeezed
   desktop one), a swipeable card hand with momentum, and a portrait landing
   hero. Rotate to landscape and it asks for portrait back.
-- 🎴 **2–4 player rooms** with a shareable 6-letter code / invite link.
+- 🎴 **2–4 player rooms** with a shareable 6-letter code, invite link, and
+  lobby QR for phone joins.
 - 🔒 **Server-authoritative** — the deck and every hand live on the server; the
   client only ever sees its own cards. No cheating, and reconnects restore state.
 - ⚙️ **Configurable house rules** — UNO-call penalty, +2/+4 stacking, same-rank
   stacking, draw-until-playable, force-play, deal size, and single-round vs
   target-score scoring.
-- 🔁 **Resilient** — rejoin-first connection, a 30s turn clock with auto-pass,
-  live reconnect banners, and abandoned rooms swept from memory.
+- 🔁 **Resilient** — rejoin-first connection with a join watchdog, a 30s turn
+  clock with auto-pass, live reconnect banners, cold-start messaging when the
+  game server is waking, and abandoned rooms swept from memory.
 - ✨ A hand-drawn "groovy" art style, a first-visit loading intro, playful table
   motion, and a confetti win screen.
 
-## What's new in v2
+## What's new
+
+### v2.1
+
+- **Catch UNO is actually playable.** A large catch action sits beside your own
+  UNO button (desktop bottom-left, phone above the tray); seat pills remain as
+  markers.
+- **Wild and +4 multi-card play.** The "Play multiple cards" rule and the +2/+4
+  chain toggles each allow several of their rank in one turn; a stack of wilds
+  asks for color once.
+- **Win screen handoff.** The final board holds ~1.1s, fades out, then the win
+  screen arrives in two acts — name first, then crown, card, and scoreboard.
+  Confetti fires on the name.
+- **Lobby invite QR** — scan to join; tap the code/QR block to copy the link.
+- **Cold-start UX** when the Render free tier is waking: after 3.5s the room
+  screen explains the wait and shows elapsed time (`GET /health` probe).
+- **Join watchdog** — rejoin failures fall back to a fresh join, retried every
+  2.5s until state arrives; host rule config survives a stuck reload.
+- **Custom 404** — three UNO cards spell 404 on the landing hero art.
+
+### v2
 
 - **Mobile responsive throughout.** Phones (≤500px) get `MobileGameTable`, a
   portrait landing composition, and the same end screens reflowed — the desktop
@@ -91,7 +114,7 @@ src/shared/protocol.ts Zod message schemas + client/server message types
 src/store/ src/hooks/  Zustand view store + PartySocket connection + useIsPhone (the ≤500px seam)
 src/lib/               identity, avatars, asset preloading, env flags
 src/app/               Routes: landing, /create, /room/[code], /demo (dev-only)
-src/components/        Lobby, GameTable + MobileGameTable, HeroScene, RoundEnd, Confetti, ...
+src/components/        Lobby, GameTable + MobileGameTable, HeroScene, RoundEnd, CatchCall, RoomQr, Confetti, ...
 public/                Served card art, fonts, avatars, backgrounds
 ```
 
@@ -117,9 +140,9 @@ table. The flip side: genuine *game-logic* fixes must be applied to both. See
 | Rule | Default | Effect |
 |---|---|---|
 | `unoCall` / `unoPenalty` | on / 2 | Player at 1 card must call UNO; catchable until the next player acts. |
-| `stackDraw2OnDraw2` | off | +2 may be stacked onto +2. |
-| `stackDraw4OnDraw2Or4` | off | +4 may be stacked onto +2 or +4. **+2 onto +4 is never allowed.** |
-| `stacking` | off | Play several same-rank cards (any color) in one turn. |
+| `stackDraw2OnDraw2` | off | Chain +2 on +2 (also lets you play several +2s at once). |
+| `stackDraw4OnDraw2Or4` | off | Chain +4 on +2 or +4. **+2 onto +4 is never allowed.** Also lets you play several +4s at once. |
+| `stacking` | off | Play multiple cards — several same-rank cards in one turn (two 5s, two Wilds, two +4s, etc.). |
 | `drawPenaltyBehavior` | drawOneAndPass | Draw one then pass, or keep drawing until playable. |
 | `forcePlay` | off | Must immediately play a drawn card if it's playable. |
 | `dealSize` | 7 | Starting hand size. |

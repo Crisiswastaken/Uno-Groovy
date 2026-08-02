@@ -21,11 +21,12 @@ src/engine/            Pure, unit-tested game engine (no networking, no React) â
   types.ts  deck.ts  rules.ts  engine.ts  engine.test.ts
 src/shared/protocol.ts Zod message schemas + client/server message types
 src/store/gameStore.ts Zustand store (personalized view + toasts)
-src/hooks/useRoom.ts   PartySocket connection: rejoin-first-then-join
+src/hooks/useRoom.ts   PartySocket connection: rejoin-first-then-join, join watchdog, /health probe
+src/hooks/useEndHold.ts Win-screen handoff: holds the final board, then fades to RoundEnd
 src/hooks/useIsPhone.ts The ONE phone/desktop seam (viewport â‰¤ 500px)
 src/lib/               identity (localStorage), avatars, assets/preload, env flags
-src/app/               Routes: landing, /create, /room/[code], /demo (dev-only)
-src/components/        Lobby, GameTable, MobileGameTable, HeroScene, RoundEnd, Toasts, ...
+src/app/               Routes: landing, /create, /room/[code], not-found, /demo (dev-only)
+src/components/        Lobby, GameTable, MobileGameTable, HeroScene, RoundEnd, CatchCall, RoomQr, Toasts, ...
 public/                Served assets (card art, fonts, avatars, backgrounds)
 ```
 

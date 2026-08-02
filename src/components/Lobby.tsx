@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ClientView } from "../engine/types";
 import type { ClientMessage } from "../shared/protocol";
 import { usePlaySound } from "../hooks/use-play-sound";
 import { Card as Img } from "./ui/Card";
+import { RoomQr } from "./RoomQr";
 
 export function Lobby({
   view,
@@ -14,24 +15,38 @@ export function Lobby({
   send: (m: ClientMessage) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [pressing, setPressing] = useState(false);
   const isHost = view.hostPlayerId === view.youPlayerId;
   const canStart = view.players.length >= 2;
 
   const copySfx = usePlaySound({ sound: "interaction.confirm" });
   const startSfx = usePlaySound({ sound: "interaction.confirm" });
 
+  // Owns its own timer, so a second tap mid-window extends the message instead
+  // of letting the first tap's timeout cut it short.
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+  }, []);
+
   const copy = async () => {
     const link =
       typeof window !== "undefined"
         ? `${window.location.origin}/room/${view.roomCode}`
         : view.roomCode;
+    // Drop the class for a frame so a repeat tap restarts the animation. Keying
+    // the button instead would remount the QR inside it and rebuild its SVG.
+    setPressing(false);
+    requestAnimationFrame(() => setPressing(true));
     try {
       await navigator.clipboard.writeText(link);
       copySfx.play();
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => setCopied(false), 2000);
     } catch {
-      /* ignore */
+      /* Clipboard can be blocked (insecure origin, denied permission). The
+         code stays on screen to be typed in, so there's nothing to recover. */
     }
   };
 
@@ -51,24 +66,49 @@ export function Lobby({
 
       {/* A frosted sheet lifts the lobby cleanly off the busy background. */}
       <div className="w-full max-w-md bg-uno-cream/80 backdrop-blur-2xl rounded-[28px] border-2 border-white/50 shadow-[0_20px_60px_rgba(43,42,39,0.25)] p-5 sm:p-6">
-        <h1 className="font-display text-4xl sm:text-5xl mb-1">Lobby</h1>
-
-        <div className="bg-uno-white1 border-2 border-uno-ink/10 rounded-card p-4 sm:p-5 mb-6 text-center">
-          <div className="text-xs uppercase tracking-widest font-semibold text-uno-ink2">
-            Room code
-          </div>
-          <div className="font-display text-4xl sm:text-5xl tracking-[0.1em] my-2">
+        {/* Code and QR are one target: both say "this is how you get people in",
+            so making them separately clickable would only add a decision. */}
+        <button
+          onClick={copy}
+          onAnimationEnd={() => setPressing(false)}
+          aria-label={`Copy the invite link for room ${view.roomCode}`}
+          className={[
+            pressing && "copy-press",
+            "w-full bg-uno-white1 border-2 border-uno-ink/10 hover:border-uno-ink/25",
+            "rounded-card px-4 pt-4 pb-3 mb-4 text-center transition-colors cursor-pointer",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          <div className="font-display text-4xl sm:text-5xl tracking-[0.1em] leading-none">
             {view.roomCode}
           </div>
-          <button
-            onClick={copy}
-            className="text-sm font-semibold bg-uno-cream border-2 border-uno-ink/15 hover:bg-uno-white2 hover:border-uno-ink/25 hover:-translate-y-0.5 active:translate-y-0 rounded-full px-4 py-1.5 transition"
-          >
-            {copied ? "Copied link!" : "Copy invite link"}
-          </button>
-        </div>
 
-        <div className="flex flex-col gap-2 mb-6">
+          {/* The QR reserves a 10% quiet zone inside its own square (it has to —
+              see RoomQr), which reads as dead air on all four sides. The
+              negative margin pulls the neighbours into that band so the spacing
+              is judged off the code's ink instead. The quiet zone still exists
+              and still sits on this pale panel, so scanning is unaffected.
+              Percentages here resolve against the wrapper's width, which is the
+              QR's width — so this stays proportional at any panel size. */}
+          <div className="mx-auto w-full max-w-[17rem]">
+            <RoomQr roomCode={view.roomCode} className="-my-[7%]" />
+          </div>
+
+          {/* Swaps in place in a fixed-height slot, so nothing below shifts.
+              aria-live announces the copy without stealing focus from Start. */}
+          <div className="h-4 text-xs" aria-live="polite">
+            {copied ? (
+              <span className="copy-note font-semibold text-uno-green">
+                Link copied
+              </span>
+            ) : (
+              <span className="text-uno-ink2">Tap to copy the invite link</span>
+            )}
+          </div>
+        </button>
+
+        <div className="flex flex-col gap-2 mb-4">
           {view.players.map((p) => (
             <div
               key={p.playerId}

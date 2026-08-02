@@ -136,6 +136,10 @@ the worker path calls `transferControlToOffscreen()`, which is one-way, and
 with `backwards` they'd jump on completion. Anything whose final state is
 identity should use `backwards` so hover/active transforms still work after.
 
+Other additive keyframe families (don't rename or repurpose): `catch-*` (the
+`CatchAlert` throb + halo), `table-outro` (win handoff from the live table),
+`nf-*` (404 card deal), `copy-*` (lobby invite tap feedback).
+
 ---
 
 ## 6. Known-good state (don't regress these)
@@ -167,6 +171,24 @@ As of **v2**, the mobile portrait experience works end to end. Preserve:
   (discard dead-centre) does *not* fit — at 360px the draw pile collides with the
   side opponent seats.
 - **Landscape shows the rotate-to-portrait prompt** (`.rotate-prompt`).
+- **The catch action lives in two places** (`CatchCall.tsx`): a big `CatchAlert`
+  beside the local UNO button (desktop bottom-left, phone above the tray) and a
+  `CatchPill` on the seat. Both tables render both — the seat pill alone lost
+  the race against the UNO button every time. The phone pill is sized to fit the
+  64px side-seat box; don't widen it.
+- **The win screen is delayed on purpose** (`useEndHold`): the table is held for
+  `END_HOLD_MS`, fades via `.table-outro`, and only then does `RoundEnd` mount.
+  The in-round tree renders inside one `fixed inset-0` wrapper so that fade
+  can't become the containing block for the tables' own `fixed` positioning.
+- **Room joins are watchdogged** (`useRoom`): `rejoin` failing with *either*
+  "No seat to rejoin" or "Room no longer exists" falls back to `joinRoom`, and
+  the join is re-sent every 2.5s until a view arrives. The create payload is
+  peeked, not taken — it's cleared only once the server seats you.
+- **Lobby invite is code + QR, one copy target** (`Lobby` + `RoomQr`). The QR
+  needs a **light surface** behind it (transparent background; quiet zone is only
+  quiet if what shows through is pale). Tune sizes at `/demo/qr` (dev-only).
+- **404 uses `HeroBackdrop` with `plus4={false}`** (`not-found.tsx`) so the
+  scattered wild +4 cut-out doesn't read as a stray card in the fan.
 
 ### Known fragile spots (fix candidates, not yet done)
 - **Side-seat anchors use `top-[33vh]`** (`MobileGameTable.tsx`) while the centre

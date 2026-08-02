@@ -178,7 +178,7 @@ export function PartView({ name }: { name: string }) {
         player({ playerId: "p4", displayName: "Sam", seat: 3, handCount: 1, isCatchable: true }),
       ];
       // A red 5 + blue 5 to exercise the Stacking selection (both are openers
-      // against a 5 on top), plus a wild and spare cards.
+      // against a 5 on top), plus two +4s and spare cards.
       const hand: ClientView["yourHand"] = [
         { uid: "h1", color: "red", value: "5" },
         { uid: "h2", color: "blue", value: "5" },
@@ -186,6 +186,9 @@ export function PartView({ name }: { name: string }) {
         { uid: "h4", color: null, value: "wild_draw4" },
         { uid: "h5", color: "green", value: "6" },
         { uid: "h6", color: "red", value: "8" },
+        // A second +4, so the wild side of stacking is exercised too: two of
+        // them select as one stack and take a single color pick.
+        { uid: "h7", color: null, value: "wild_draw4" },
       ];
       return (
         <GameTable

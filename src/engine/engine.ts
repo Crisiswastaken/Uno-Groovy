@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { buildDeck, cardPoints, shuffle } from "./deck";
-import { canPlay, isPlayableNormally, isWild } from "./rules";
+import { canPlay, canStackRank, isPlayableNormally, isWild } from "./rules";
 import {
   ActionLogEntry,
   Card,
@@ -225,12 +225,13 @@ export function playCard(
 }
 
 /**
- * Play one or more cards in a single turn. With more than one card the
- * `stacking` house rule must be on and every card must share the same rank
- * (number or symbol) — their colors may differ. Effects accumulate: N +2s add
- * 2N to the draw stack, N skips skip N players, an odd number of reverses flips
- * direction. The last card played sets the active color (or the chosen color
- * for wilds).
+ * Play one or more cards in a single turn. With more than one card every card
+ * must share the same rank (number or symbol) — their colors may differ — and a
+ * house rule must allow that rank to stack (see {@link canStackRank}). Effects
+ * accumulate: N +2s add 2N to the draw stack, N +4s add 4N, N skips skip N
+ * players, an odd number of reverses flips direction. The last card played sets
+ * the active color; for a stack of wilds that is the one `chosenColor` supplied
+ * for the whole play, so the player is only asked to pick a color once.
  */
 export function playCards(
   state: RoomState,
@@ -258,13 +259,16 @@ export function playCards(
   if (found.some((c) => !c)) return fail("Card not in hand");
   const cards = found as Card[];
 
-  // Multi-card play requires the stacking rule and a shared rank.
+  // Multi-card play requires a shared rank and a rule that allows stacking it.
+  // Wilds are not special-cased here: two Wild +4s share the rank "wild_draw4"
+  // and stack like any other pair, taking a SINGLE chosen color for the whole
+  // play (see the `chosenColor` check below).
   if (cards.length > 1) {
-    if (!state.config.stacking) return fail("Stacking is off");
     const rank = cards[0].value;
     if (!cards.every((c) => c.value === rank)) {
       return fail("Stacked cards must be the same number or symbol");
     }
+    if (!canStackRank(rank, state.config)) return fail("Stacking is off");
   }
 
   // At least one card must be a legal opener (respecting any pending stack).

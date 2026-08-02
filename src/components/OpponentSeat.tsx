@@ -3,6 +3,7 @@
 import type { ClientView } from "../engine/types";
 import { avatarFor } from "../lib/avatars";
 import { CardBack } from "./Card";
+import { CatchPill } from "./CatchCall";
 import { CountdownRing } from "./TurnTimer";
 import { Card as Img } from "./ui/Card";
 
@@ -125,14 +126,9 @@ export function OpponentSeat({
     ? "bg-uno-cream/35 ring-2 ring-uno-ink/10 shadow-[0_6px_18px_rgba(43,42,39,0.16)]"
     : "bg-uno-cream/0";
 
-  const catchBtn = player.isCatchable && onCatch && (
-    <button
-      onClick={onCatch}
-      className="text-[11px] bg-uno-red text-uno-cream font-bold px-2.5 py-1 rounded-full border-2 border-uno-cream shadow-[0_2px_4px_rgba(43,42,39,0.3)] animate-pulse hover:scale-105 transition-transform"
-    >
-      Catch!
-    </button>
-  );
+  // Seat-level catch marker — a real touch target, not the 11px sliver it was.
+  // The fast action is <CatchAlert> down by the hand (see CatchCall.tsx).
+  const catchBtn = player.isCatchable && onCatch && <CatchPill onCatch={onCatch} />;
 
   // Left/right seats: cards lie on their side (rotated 90°) and stack down the
   // screen edge, fanned + staggered so they read as a hand seen edge-on.

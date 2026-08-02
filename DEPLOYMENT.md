@@ -46,7 +46,8 @@ The repo includes a **`render.yaml`** Blueprint, so this is nearly automatic.
    (`custom-uno-server`) with:
    - Build: `npm ci --omit=dev`
    - Start: `npm run start:server` (runs `tsx server/index.ts`)
-   - Health check: `/`
+   - Health check: `/` (plain HTTP 200) or `/health` (JSON readiness probe with
+     `ok`, `rooms`, `uptimeSec`)
 3. Click **Apply / Deploy** and wait for it to go live.
 
 Your server URL will look like **`custom-uno-server.onrender.com`**. Copy that
@@ -65,8 +66,10 @@ New + → **Web Service** → this repo, then set:
 
 > **Free-tier note:** Render's free web services **sleep after ~15 min idle** and
 > take ~30–60s to wake on the next request. The first player in after a lull will
-> see "Connecting…" for a moment while it spins up. Fine for casual games; upgrade
-> to a paid instance if you want it always-on.
+> see "Connecting…" for a moment while it spins up; after 3.5s the room screen
+> explains the cold boot and polls `GET /health` so the wait reads as progress
+> instead of a hang. Fine for casual games; upgrade to a paid instance if you
+> want it always-on.
 
 Redeploy the server whenever you change `server/index.ts` or anything in
 `src/engine/` or `src/shared/`.
@@ -99,8 +102,9 @@ dev-only `/demo` routes automatically **404 in production**.
 Against the live Vercel URL:
 
 - [ ] Landing (`/`) loads; first visit plays the intro splash once.
-- [ ] **Create Room** → lobby with a room code appears (proves the socket reached
-      the Render server).
+- [ ] **Create Room** → lobby with a room code and invite QR appears (proves the
+      socket reached the Render server).
+- [ ] Tap the code/QR block — "Link copied" appears; paste confirms the invite URL.
 - [ ] Open the invite link in a second browser/incognito window and join — both
       players show in the lobby.
 - [ ] Host starts; cards deal, turns advance, a wild prompts the color picker, a
@@ -109,8 +113,10 @@ Against the live Vercel URL:
 - [ ] `/demo` returns **404**.
 
 If it sticks on "Connecting…": the Render service may be waking from sleep (wait
-~30s), or `NEXT_PUBLIC_PARTYKIT_HOST` is wrong / the web app wasn't rebuilt after
-setting it.
+~30–60s; the room screen will explain after a few seconds), or
+`NEXT_PUBLIC_PARTYKIT_HOST` is wrong / the web app wasn't rebuilt after setting
+it. You can also probe `https://<your-server>/health` directly — it should return
+`{"ok":true,...}`.
 
 ---
 
@@ -123,6 +129,9 @@ setting it.
   `server/index.ts`), which covers idlers and disconnected players alike. It is
   **parked while a room has no live connections**, so a table everyone briefly
   dropped from doesn't burn turns while nobody is watching.
+- **Readiness probe:** `GET /health` returns `{ ok, rooms, uptimeSec }` with
+  permissive CORS. The client polls it during cold boots to distinguish "server
+  waking" from "offline".
 - **Room lifecycle:** a room is allocated on the first `joinRoom` message, not on
   socket connect, so opening sockets can't mint rooms. Rooms with no live
   connections are swept after 10 minutes (`EMPTY_ROOM_TTL_MS`), on a 30s sweep.
